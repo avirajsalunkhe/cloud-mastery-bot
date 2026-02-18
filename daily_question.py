@@ -43,15 +43,15 @@ def get_question_pack(exam):
         print("❌ GEMINI_API_KEY is missing.")
         return None
 
-    # Comprehensive list of model identifiers to solve the persistent 404 issue
+    # Comprehensive list of model identifiers to solve the persistent 404 issue.
+    # gemini-1.5-flash-8b is prioritized as it often has higher RPM on free tier.
     strategies = [
+        ("v1beta", "gemini-1.5-flash-8b", True),
         ("v1beta", "gemini-1.5-flash", True),
-        ("v1beta", "gemini-1.5-flash-latest", True),
         ("v1", "gemini-1.5-flash", False),
-        ("v1", "gemini-1.5-flash-latest", False),
+        ("v1beta", "gemini-2.0-flash-exp", True),
         ("v1beta", "gemini-2.0-flash", True),
         ("v1beta", "gemini-1.5-pro", True),
-        ("v1beta", "gemini-1.0-pro", False),
     ]
     
     prompt = (
@@ -90,7 +90,8 @@ def get_question_pack(exam):
                     break 
                 
                 elif res.status_code == 429:
-                    wait_time = (retry + 1) * 15
+                    # Exponential backoff for rate limits: 20s, 40s, 60s
+                    wait_time = (retry + 1) * 20
                     if retry == 2:
                         print(f"    🛑 Quota exhausted for {model}.")
                         break
@@ -99,7 +100,6 @@ def get_question_pack(exam):
                 
                 elif res.status_code == 400:
                     reason = res.json().get('error', {}).get('message', 'Unknown 400 Error')
-                    # If the error is about the MIME type, we try the same model without JSON mode
                     if "responseMimeType" in reason:
                         print(f"    ⚠️ 400: Model doesn't support JSON mode. Retrying without it...")
                         current_payload["generationConfig"].pop("responseMimeType", None)
@@ -108,7 +108,7 @@ def get_question_pack(exam):
                     break 
                 
                 elif res.status_code == 404:
-                    # Keep moving through strategies if model not found
+                    print(f"    ⚠️ 404 Model Not Found.")
                     break
                 
                 else:
@@ -119,8 +119,8 @@ def get_question_pack(exam):
                 print(f"    ⚠️ Connection error: {e}")
                 break
         
-        # Buffer to prevent 429 spam
-        time.sleep(2)
+        # Buffer between models to avoid triggering rapid-fire rate limits
+        time.sleep(5)
                 
     return None
 
@@ -220,7 +220,7 @@ if __name__ == "__main__":
             packs[exam] = pack
             print(f"  ✅ {exam} pack cached successfully.")
         else:
-            print(f"  ❌ All strategies failed for {exam}. (Ensure API key is for AI Studio and project is enabled)")
+            print(f"  ❌ All strategies failed for {exam}. (Check logs for 404 vs 429 details)")
 
     # Delivery Phase
     successful_sends = 0
