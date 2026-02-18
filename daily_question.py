@@ -6,6 +6,7 @@ import firebase_admin
 import time
 from datetime import datetime, timezone
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -31,6 +32,9 @@ if not firebase_admin._apps:
 db = firestore.client()
 
 def get_question_pack(exam):
+    """
+    Fetches a pack of 5 questions from Gemini with exponential backoff for 429/500 errors.
+    """
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
     
     prompt = (
@@ -48,6 +52,7 @@ def get_question_pack(exam):
         }
     }
 
+    # Exponential backoff: 1s, 2s, 4s, 8s, 16s
     for i in range(5):
         try:
             res = requests.post(url, json=payload, timeout=30)
@@ -57,10 +62,12 @@ def get_question_pack(exam):
                     text_content = data['candidates'][0]['content']['parts'][0]['text']
                     print(f"✅ Successfully generated question pack for {exam}")
                     return text_content
+            elif res.status_code == 429:
+                print(f"⚠️ Gemini API rate limited (429). Retrying in {2**i}s...")
             else:
-                print(f"⚠️ Gemini API returned status {res.status_code}. Retrying...")
+                print(f"⚠️ Gemini API error {res.status_code}. Retrying in {2**i}s...")
         except Exception as e:
-            print(f"⚠️ API Error: {e}. Retrying...")
+            print(f"⚠️ Request Error: {e}. Retrying...")
         
         time.sleep(2**i)
         
@@ -125,9 +132,9 @@ def send_email(user_data, questions_json):
 if __name__ == "__main__":
     print(f"🚀 Starting daily dispatch at {datetime.now(timezone.utc)}")
     
-    # Corrected path using .document() instead of .doc() for the Python SDK
+    # Using .document() and FieldFilter to resolve the Positional Argument UserWarning
     sub_ref = db.collection('artifacts').document(APP_ID).collection('public').document('data').collection('subscribers')
-    subs = sub_ref.where('status', '==', 'active').stream()
+    subs = sub_ref.where(filter=FieldFilter('status', '==', 'active')).stream()
     
     sub_list = []
     needed_exams = set()
@@ -149,6 +156,8 @@ if __name__ == "__main__":
         pack = get_question_pack(exam)
         if pack:
             packs[exam] = pack
+        else:
+            print(f"❌ Failed to generate {exam} pack after retries.")
             
     for u in sub_list:
         exam = u.get('examType', 'AZ-900')
