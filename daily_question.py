@@ -17,9 +17,6 @@ SENDER_EMAIL = os.getenv("EMAIL_SENDER")
 SENDER_PASSWORD = os.getenv("EMAIL_PASSWORD")
 APP_ID = "cloud-devops-bot"
 
-# Using the stable 1.5 Flash model
-MODEL_NAME = "gemini-1.5-flash"
-
 # Firebase Initialization
 service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
 if not firebase_admin._apps:
@@ -35,11 +32,17 @@ db = firestore.client()
 
 def get_question_pack(exam):
     """
-    Fetches a pack of 5 questions from Gemini with exponential backoff for 429/500 errors.
+    Fetches a pack of 5 questions from Gemini with a robust fallback system 
+    to handle 404 (Model Not Found) and 429 (Rate Limit) errors.
     """
-    # Standard endpoint for Google AI Studio
-    base_url = "https://generativelanguage.googleapis.com/v1beta/models/"
-    url = f"{base_url}{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
+    # List of endpoints and models to try in order of preference
+    # Some API keys/regions only have access to specific versions
+    strategies = [
+        ("v1", "gemini-1.5-flash"),
+        ("v1beta", "gemini-1.5-flash"),
+        ("v1", "gemini-1.5-flash-8b"),
+        ("v1beta", "gemini-1.0-pro"),
+    ]
     
     prompt = (
         f"Generate exactly 5 multiple-choice questions for the {exam} certification. "
@@ -56,41 +59,37 @@ def get_question_pack(exam):
         }
     }
 
-    # Exponential backoff: 2s, 4s, 8s, 16s, 32s
-    for i in range(5):
-        try:
-            res = requests.post(url, json=payload, timeout=30)
-            
-            if res.status_code == 200:
-                data = res.json()
-                if 'candidates' in data and data['candidates']:
-                    text_content = data['candidates'][0]['content']['parts'][0]['text']
-                    print(f"✅ Successfully generated question pack for {exam}")
-                    return text_content
-            
-            elif res.status_code == 404:
-                # Fallback to a different model version if the specific one isn't found
-                fallback_models = ["gemini-1.5-flash-latest", "gemini-pro"]
-                current_fallback = fallback_models[i % len(fallback_models)]
-                print(f"⚠️ Model '{MODEL_NAME}' not found. Trying fallback: {current_fallback}...")
-                url = f"{base_url}{current_fallback}:generateContent?key={GEMINI_API_KEY}"
-                continue
+    for attempt, (api_version, model) in enumerate(strategies):
+        url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model}:generateContent?key={GEMINI_API_KEY}"
+        
+        # Internal retry loop for transient errors (429, 500)
+        for retry in range(2):
+            try:
+                res = requests.post(url, json=payload, timeout=30)
                 
-            elif res.status_code == 429:
-                wait_time = 2 ** (i + 1)
-                print(f"⚠️ Gemini API rate limited (429). Retrying in {wait_time}s...")
-                time.sleep(wait_time)
+                if res.status_code == 200:
+                    data = res.json()
+                    if 'candidates' in data and data['candidates']:
+                        text_content = data['candidates'][0]['content']['parts'][0]['text']
+                        print(f"✅ Successfully generated question pack for {exam} using {model} ({api_version})")
+                        return text_content
                 
-            else:
-                wait_time = 2 ** (i + 1)
-                print(f"⚠️ Gemini API error {res.status_code}. Retrying in {wait_time}s...")
-                print(f"Debug Info: {res.text}")
-                time.sleep(wait_time)
-                
-        except Exception as e:
-            wait_time = 2 ** (i + 1)
-            print(f"⚠️ Request Error: {e}. Retrying in {wait_time}s...")
-            time.sleep(wait_time)
+                elif res.status_code == 404:
+                    print(f"⚠️ Strategy failed: {model} not found on {api_version}. Trying next strategy...")
+                    break # Break out of internal retry to try next strategy
+                    
+                elif res.status_code == 429:
+                    wait_time = 2 ** (retry + 1)
+                    print(f"⚠️ Rate limited (429). Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    
+                else:
+                    print(f"⚠️ API Error {res.status_code} on {model}/{api_version}. Debug: {res.text[:100]}")
+                    break # Try next strategy
+                    
+            except Exception as e:
+                print(f"⚠️ Request Error: {e}")
+                break
         
     return None
 
@@ -189,7 +188,7 @@ if __name__ == "__main__":
         if pack:
             packs[exam] = pack
         else:
-            print(f"❌ Failed to generate {exam} pack after retries.")
+            print(f"❌ Failed to generate {exam} pack after trying all strategies.")
             
     for u in sub_list:
         exam = u.get('examType', 'AZ-900')
