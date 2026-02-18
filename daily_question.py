@@ -17,10 +17,6 @@ SENDER_EMAIL = os.getenv("EMAIL_SENDER")
 SENDER_PASSWORD = os.getenv("EMAIL_PASSWORD")
 APP_ID = "cloud-devops-bot"
 
-# Custom Exception for Rate Limiting
-class GeminiRateLimitError(Exception):
-    pass
-
 # Firebase Initialization
 service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
 if not firebase_admin._apps:
@@ -37,20 +33,20 @@ db = firestore.client()
 def get_question_pack(exam):
     """
     Fetches a pack of 5 questions from Gemini. 
-    Implements a robust fallback and aggressive rate-limit cooling.
+    Implements a robust fallback and high-patience rate-limit cooling.
     """
     if not GEMINI_API_KEY:
         print("❌ GEMINI_API_KEY is missing.")
         return None
 
-    # Reordered strategies based on your successful logs.
-    # gemini-2.0-flash was the only one that didn't return 404.
+    # Comprehensive strategy list. 
+    # Using '-latest' aliases often resolves 404 errors on specific keys.
     strategies = [
+        ("v1beta", "gemini-1.5-flash-latest", True),
         ("v1beta", "gemini-2.0-flash", True),
-        ("v1beta", "gemini-1.5-flash", True),
         ("v1", "gemini-1.5-flash", False),
-        ("v1beta", "gemini-1.5-flash-8b", True),
-        ("v1beta", "gemini-1.5-pro", True),
+        ("v1beta", "gemini-1.5-flash", True),
+        ("v1beta", "gemini-1.5-pro-latest", True),
     ]
     
     prompt = (
@@ -70,9 +66,7 @@ def get_question_pack(exam):
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
         ],
         "generationConfig": {
-            "temperature": 0.8,
-            "topP": 0.95,
-            "topK": 40
+            "temperature": 0.8
         }
     }
 
@@ -85,7 +79,7 @@ def get_question_pack(exam):
         
         print(f"  Trying {model} via {api_version}...")
         
-        # Increased retries and wait times for 429 errors
+        # High-patience retries for 429 (Rate Limit) errors
         for retry in range(3): 
             try:
                 res = requests.post(url, json=current_payload, timeout=60)
@@ -94,16 +88,17 @@ def get_question_pack(exam):
                     data = res.json()
                     if 'candidates' in data and data['candidates'] and 'content' in data['candidates'][0]:
                         return data['candidates'][0]['content']['parts'][0]['text']
-                    print("    ⚠️ API returned 200 but no valid content (Check safety filters).")
+                    print("    ⚠️ API returned 200 but no valid content.")
                     break 
                 
                 elif res.status_code == 429:
-                    # Exponential backoff for free-tier rate limits: 30s, 60s, 90s
-                    wait_time = (retry + 1) * 30
+                    # Free tier quotas often reset every 60 seconds.
+                    # We wait long enough for a full reset.
+                    wait_time = 65 
                     if retry == 2:
-                        print(f"    🛑 Quota exhausted for {model} after multiple cooling attempts.")
+                        print(f"    🛑 Quota still exhausted for {model} after long cooling.")
                         break
-                    print(f"    ⚠️ 429 Rate Limit. Cooling down for {wait_time}s...")
+                    print(f"    ⚠️ 429 Rate Limit. Waiting {wait_time}s for quota reset...")
                     time.sleep(wait_time)
                 
                 elif res.status_code == 400:
@@ -127,7 +122,7 @@ def get_question_pack(exam):
                 print(f"    ⚠️ Connection error: {e}")
                 break
         
-        # Buffer between model strategies to prevent cumulative rate limit triggers
+        # Buffer between model strategies
         time.sleep(5)
                 
     return None
@@ -199,6 +194,7 @@ def send_email(user_data, questions_json):
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
             s.login(SENDER_EMAIL, SENDER_PASSWORD)
             s.sendmail(SENDER_EMAIL, email, msg.as_string())
+        print(f"📧 Email sent successfully to {email}")
         return True
     except Exception as e:
         print(f"❌ SMTP failed for {email}: {e}")
