@@ -30,102 +30,91 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-def get_question_pack(exam):
+def refill_question_bank(exam):
     """
-    Fetches exactly 1 short question from Gemini. 
-    Implements a robust fallback and high-patience rate-limit cooling.
+    Calls Gemini to generate a batch of 10 questions and stores them in Firestore.
+    This saves your API quota for the next 10 days.
     """
-    if not GEMINI_API_KEY:
-        print("❌ GEMINI_API_KEY is missing.")
-        return None
-
-    # Strategies updated based on logs:
-    # 1. Standard 1.5 Flash (Removed -latest suffix to avoid 404)
-    # 2. 2.0 Flash (Confirmed exists in logs but limited)
-    # 3. 1.5 Flash 8B (Higher quota for free tier)
+    print(f"🧠 Bank empty for {exam}. Requesting batch of 10 questions from Gemini...")
+    
+    # We prioritize 2.0-flash as it's the only one not returning 404 in your logs
     strategies = [
-        ("v1beta", "gemini-1.5-flash", True),
-        ("v1", "gemini-1.5-flash", False),
         ("v1beta", "gemini-2.0-flash", True),
-        ("v1beta", "gemini-1.5-flash-8b", True),
+        ("v1beta", "gemini-1.5-flash", True),
     ]
-    
-    # Prompt updated for 1 question and 40 char limit
+
     prompt = (
-        f"Generate exactly 1 multiple-choice question for the {exam} certification. "
-        "The question text MUST be extremely short (maximum 40 characters). "
-        "Return a JSON array containing exactly one object. The object must have: "
+        f"Generate exactly 10 multiple-choice questions for the {exam} certification. "
+        "Each question text MUST be extremely short (maximum 40 characters). "
+        "Return a JSON array of 10 objects. Each object must have: "
         "'question', 'options' (array of 4), 'correctIndex' (0-3), 'explanation', and 'topic'. "
-        "IMPORTANT: Output ONLY the raw JSON array. No markdown code blocks, no preamble."
+        "IMPORTANT: Output ONLY the raw JSON array. No markdown."
     )
-    
+
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "safetySettings": [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-        ],
-        "generationConfig": {
-            "temperature": 0.8
-        }
+        "generationConfig": {"temperature": 0.8}
     }
 
     for api_version, model, use_json_mode in strategies:
         url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model}:generateContent?key={GEMINI_API_KEY}"
         current_payload = json.loads(json.dumps(payload))
-        
         if use_json_mode:
             current_payload["generationConfig"]["responseMimeType"] = "application/json"
         
-        print(f"  Trying {model} via {api_version}...")
+        try:
+            res = requests.post(url, json=current_payload, timeout=60)
+            if res.status_code == 200:
+                data = res.json()
+                text_content = data['candidates'][0]['content']['parts'][0]['text']
+                
+                # Parse the batch
+                clean_json = text_content.strip()
+                if "```json" in clean_json:
+                    clean_json = clean_json.split("```json")[1].split("```")[0].strip()
+                
+                questions = json.loads(clean_json)
+                
+                # Save to Firestore Bank
+                bank_ref = db.collection('artifacts').document(APP_ID).collection('public').document('data').collection('question_bank')
+                for q in questions:
+                    bank_ref.add({
+                        "examType": exam,
+                        "question_data": json.dumps([q]), # Store as list of 1 for consistency
+                        "used": False,
+                        "createdAt": datetime.now(timezone.utc)
+                    })
+                print(f"✅ Successfully added 10 new questions to {exam} bank.")
+                return True
+            elif res.status_code == 429:
+                print(f"    ⚠️ Rate limit on {model}. Waiting 30s...")
+                time.sleep(30)
+            else:
+                print(f"    ⚠️ Strategy {model} failed ({res.status_code})")
+        except Exception as e:
+            print(f"    ⚠️ Error refilling bank: {e}")
+            
+    return False
+
+def get_question_from_bank(exam):
+    """
+    Checks the database for an unused question. 
+    If none exist, it triggers a refill.
+    """
+    bank_ref = db.collection('artifacts').document(APP_ID).collection('public').document('data').collection('question_bank')
+    
+    # Check for an unused question
+    query = bank_ref.where(filter=FieldFilter("examType", "==", exam)).where(filter=FieldFilter("used", "==", False)).limit(1).stream()
+    
+    for doc in query:
+        # Mark as used immediately
+        bank_ref.document(doc.id).update({"used": True, "usedAt": datetime.now(timezone.utc)})
+        return doc.to_dict()["question_data"]
+    
+    # If we reached here, bank is empty
+    if refill_question_bank(exam):
+        return get_question_from_bank(exam) # Recursive call once refilled
         
-        # High-patience retries for 429 (Rate Limit) errors
-        for retry in range(3): 
-            try:
-                res = requests.post(url, json=current_payload, timeout=60)
-                
-                if res.status_code == 200:
-                    data = res.json()
-                    if 'candidates' in data and data['candidates'] and 'content' in data['candidates'][0]:
-                        return data['candidates'][0]['content']['parts'][0]['text']
-                    print("    ⚠️ API returned 200 but no valid content.")
-                    break 
-                
-                elif res.status_code == 429:
-                    # Free tier quotas reset strictly. We wait 90s to ensure the window clears completely.
-                    wait_time = 90 
-                    if retry == 2:
-                        print(f"    🛑 Quota exhausted for {model}. Moving to next strategy.")
-                        break
-                    print(f"    ⚠️ 429 Rate Limit. Quota full. Cooling down for {wait_time}s...")
-                    time.sleep(wait_time)
-                
-                elif res.status_code == 400:
-                    reason = res.json().get('error', {}).get('message', 'Unknown 400 Error')
-                    if "responseMimeType" in reason:
-                        print(f"    ⚠️ 400: JSON mode not supported. Retrying without it...")
-                        current_payload["generationConfig"].pop("responseMimeType", None)
-                        continue 
-                    print(f"    ⚠️ 400 Bad Request: {reason}")
-                    break 
-                
-                elif res.status_code == 404:
-                    print(f"    ⚠️ 404 Model Not Found.")
-                    break
-                
-                else:
-                    print(f"    ⚠️ API Error {res.status_code}: {res.text[:100]}")
-                    break 
-                    
-            except Exception as e:
-                print(f"    ⚠️ Connection error: {e}")
-                break
-        
-        # Buffer between model strategies to avoid triggering cumulative limits
-        time.sleep(15)
-                
     return None
 
 def send_email(user_data, questions_json):
@@ -133,22 +122,9 @@ def send_email(user_data, questions_json):
         return False
         
     try:
-        # Aggressive cleaning of the string to ensure valid JSON
-        clean_json = questions_json.strip()
-        if "```json" in clean_json:
-            clean_json = clean_json.split("```json")[1].split("```")[0].strip()
-        elif "```" in clean_json:
-            clean_json = clean_json.split("```")[1].split("```")[0].strip()
-            
-        # Find the start and end of the JSON array
-        start_idx = clean_json.find('[')
-        end_idx = clean_json.rfind(']') + 1
-        if start_idx != -1 and end_idx != -1:
-            clean_json = clean_json[start_idx:end_idx]
-            
-        q_list = json.loads(clean_json)
+        q_list = json.loads(questions_json)
     except Exception as e:
-        print(f"❌ JSON parsing failed for {user_data['email']}: {e}")
+        print(f"❌ JSON parsing failed: {e}")
         return False
 
     streak = user_data.get('streak', 0) + 1
@@ -156,12 +132,11 @@ def send_email(user_data, questions_json):
     exam = user_data.get('examType', 'Certification')
     manage_url = f"{DASHBOARD_URL.rstrip('/')}/?tab=manage&email={email}"
     
-    colors = ["#3b82f6"] # Only one color needed for one question
     q_html = ""
-    for i, q in enumerate(q_list):
+    for q in q_list:
         q_html += f"""
-        <div style='margin-bottom:25px; border-left:4px solid {colors[0]}; padding-left:15px;'>
-            <div style="font-size:10px; color:{colors[0]}; font-weight:bold; text-transform:uppercase;">Daily Challenge</div>
+        <div style='margin-bottom:25px; border-left:4px solid #3b82f6; padding-left:15px;'>
+            <div style="font-size:10px; color:#3b82f6; font-weight:bold; text-transform:uppercase;">Daily Challenge</div>
             <b style="font-size:16px; color:#1e293b; display:block; margin-bottom:5px;">{q['question']}</b>
             <div style="margin-top:8px; color:#64748b; font-size:13px;">Topic: {q.get('topic', 'General')}</div>
         </div>"""
@@ -217,22 +192,21 @@ if __name__ == "__main__":
     
     print(f"👥 Subscribers Found: {len(sub_list)}")
 
+    # Fetching/Generating logic
     packs = {}
     for exam in needed_exams:
-        print(f"🧠 Fetching {exam} pack...")
-        pack = get_question_pack(exam)
+        print(f"📦 Checking Question Bank for {exam}...")
+        pack = get_question_from_bank(exam)
         if pack:
             packs[exam] = pack
-            print(f"  ✅ {exam} pack cached successfully.")
         else:
-            print(f"  ❌ All strategies failed for {exam}. (Check log for 404 vs 429 specifics)")
+            print(f"❌ Could not retrieve or generate questions for {exam}.")
 
     # Delivery Phase
     successful_sends = 0
     for u in sub_list:
         exam = u.get('examType', 'AZ-900')
         if exam in packs:
-            print(f"📧 Mailing {u['email']}...")
             if send_email(u, packs[exam]):
                 sub_ref.document(u['id']).update({
                     'streak': u.get('streak', 0) + 1,
