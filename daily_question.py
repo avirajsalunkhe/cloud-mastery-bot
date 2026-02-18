@@ -43,12 +43,12 @@ def get_question_pack(exam):
         print("❌ GEMINI_API_KEY is missing.")
         return None
 
-    # Strategies prioritized by success probability and latest model aliases
+    # Strategies prioritized by success probability and reliable model names
     strategies = [
-        ("v1beta", "gemini-1.5-flash-latest", True),
-        ("v1beta", "gemini-2.0-flash", True),
-        ("v1", "gemini-1.5-flash-latest", False),
-        ("v1beta", "gemini-1.5-flash", False),
+        ("v1beta", "gemini-1.5-flash", True),
+        ("v1", "gemini-1.5-flash", False),
+        ("v1beta", "gemini-1.5-flash-8b", True),
+        ("v1beta", "gemini-2.0-flash-exp", True),
     ]
     
     prompt = (
@@ -72,7 +72,8 @@ def get_question_pack(exam):
         
         print(f"  Trying {model} via {api_version} (JSON Mode: {use_json_mode})...")
         
-        for retry in range(2): 
+        # We increase retries for 429 errors specifically for free-tier keys
+        for retry in range(3): 
             try:
                 res = requests.post(url, json=current_payload, timeout=45)
                 
@@ -84,31 +85,34 @@ def get_question_pack(exam):
                     break 
                 
                 elif res.status_code == 429:
-                    if retry == 1:
-                        print(f"    🛑 Hard Rate Limit hit on {model}.")
-                        raise GeminiRateLimitError("Minute quota exhausted")
-                    print(f"    ⚠️ 429 Rate Limit. Retrying in 10s...")
-                    time.sleep(10)
+                    # Exponential backoff for rate limits: 15s, 30s, 45s
+                    wait_time = (retry + 1) * 15
+                    if retry == 2:
+                        print(f"    🛑 Quota exhausted for {model} after 3 attempts.")
+                        # Move to the next model strategy instead of killing the whole script
+                        break
+                    print(f"    ⚠️ 429 Rate Limit. Cooling down for {wait_time}s...")
+                    time.sleep(wait_time)
                 
                 elif res.status_code == 400:
-                    # Often means responseMimeType is not supported or safety filters triggered
                     reason = res.json().get('error', {}).get('message', 'Unknown 400 Error')
                     print(f"    ⚠️ 400 Bad Request: {reason}")
                     break 
                 
                 elif res.status_code == 404:
-                    print(f"    ⚠️ 404 Model Not Found.")
+                    print(f"    ⚠️ 404 Model Not Found on {api_version}.")
                     break
                 
                 else:
                     print(f"    ⚠️ API Error {res.status_code}: {res.text[:100]}")
                     break 
                     
-            except GeminiRateLimitError:
-                raise
             except Exception as e:
                 print(f"    ⚠️ Connection error: {e}")
                 break
+        
+        # Add a small buffer between strategies to avoid rapid-fire 429s
+        time.sleep(2)
                 
     return None
 
@@ -201,17 +205,14 @@ if __name__ == "__main__":
     print(f"👥 Subscribers Found: {len(sub_list)}")
 
     packs = {}
-    try:
-        for exam in needed_exams:
-            print(f"🧠 Fetching {exam} pack...")
-            pack = get_question_pack(exam)
-            if pack:
-                packs[exam] = pack
-                print(f"  ✅ {exam} pack cached successfully.")
-            else:
-                print(f"  ❌ All strategies failed for {exam}.")
-    except GeminiRateLimitError:
-        print("⚠️ Rate limit detected. Proceeding to mail successfully cached packs...")
+    for exam in needed_exams:
+        print(f"🧠 Fetching {exam} pack...")
+        pack = get_question_pack(exam)
+        if pack:
+            packs[exam] = pack
+            print(f"  ✅ {exam} pack cached successfully.")
+        else:
+            print(f"  ❌ All strategies failed for {exam}.")
 
     # Delivery Phase
     successful_sends = 0
