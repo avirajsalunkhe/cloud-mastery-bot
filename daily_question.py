@@ -37,18 +37,21 @@ db = firestore.client()
 def get_question_pack(exam):
     """
     Fetches a pack of 5 questions from Gemini. 
-    Implements a multi-strategy fallback to handle 400, 404, and 429 errors.
+    Implements an exhaustive multi-strategy fallback to resolve 404 (Not Found) errors.
     """
     if not GEMINI_API_KEY:
         print("❌ GEMINI_API_KEY is missing.")
         return None
 
-    # Strategies prioritized by success probability and reliable model names
+    # Comprehensive list of model identifiers to solve the persistent 404 issue
     strategies = [
         ("v1beta", "gemini-1.5-flash", True),
+        ("v1beta", "gemini-1.5-flash-latest", True),
         ("v1", "gemini-1.5-flash", False),
-        ("v1beta", "gemini-1.5-flash-8b", True),
-        ("v1beta", "gemini-2.0-flash-exp", True),
+        ("v1", "gemini-1.5-flash-latest", False),
+        ("v1beta", "gemini-2.0-flash", True),
+        ("v1beta", "gemini-1.5-pro", True),
+        ("v1beta", "gemini-1.0-pro", False),
     ]
     
     prompt = (
@@ -67,12 +70,14 @@ def get_question_pack(exam):
     for api_version, model, use_json_mode in strategies:
         url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model}:generateContent?key={GEMINI_API_KEY}"
         current_payload = json.loads(json.dumps(payload))
+        
+        # Some older models or v1 endpoints don't support responseMimeType
         if use_json_mode:
             current_payload["generationConfig"]["responseMimeType"] = "application/json"
         
-        print(f"  Trying {model} via {api_version} (JSON Mode: {use_json_mode})...")
+        print(f"  Trying {model} via {api_version}...")
         
-        # We increase retries for 429 errors specifically for free-tier keys
+        # Retries for 429 errors
         for retry in range(3): 
             try:
                 res = requests.post(url, json=current_payload, timeout=45)
@@ -81,26 +86,29 @@ def get_question_pack(exam):
                     data = res.json()
                     if 'candidates' in data and data['candidates']:
                         return data['candidates'][0]['content']['parts'][0]['text']
-                    print("    ⚠️ API returned 200 but no candidates found.")
+                    print("    ⚠️ API returned 200 but no candidates found (Safety block?).")
                     break 
                 
                 elif res.status_code == 429:
-                    # Exponential backoff for rate limits: 15s, 30s, 45s
                     wait_time = (retry + 1) * 15
                     if retry == 2:
-                        print(f"    🛑 Quota exhausted for {model} after 3 attempts.")
-                        # Move to the next model strategy instead of killing the whole script
+                        print(f"    🛑 Quota exhausted for {model}.")
                         break
                     print(f"    ⚠️ 429 Rate Limit. Cooling down for {wait_time}s...")
                     time.sleep(wait_time)
                 
                 elif res.status_code == 400:
                     reason = res.json().get('error', {}).get('message', 'Unknown 400 Error')
+                    # If the error is about the MIME type, we try the same model without JSON mode
+                    if "responseMimeType" in reason:
+                        print(f"    ⚠️ 400: Model doesn't support JSON mode. Retrying without it...")
+                        current_payload["generationConfig"].pop("responseMimeType", None)
+                        continue 
                     print(f"    ⚠️ 400 Bad Request: {reason}")
                     break 
                 
                 elif res.status_code == 404:
-                    print(f"    ⚠️ 404 Model Not Found on {api_version}.")
+                    # Keep moving through strategies if model not found
                     break
                 
                 else:
@@ -111,7 +119,7 @@ def get_question_pack(exam):
                 print(f"    ⚠️ Connection error: {e}")
                 break
         
-        # Add a small buffer between strategies to avoid rapid-fire 429s
+        # Buffer to prevent 429 spam
         time.sleep(2)
                 
     return None
@@ -212,7 +220,7 @@ if __name__ == "__main__":
             packs[exam] = pack
             print(f"  ✅ {exam} pack cached successfully.")
         else:
-            print(f"  ❌ All strategies failed for {exam}.")
+            print(f"  ❌ All strategies failed for {exam}. (Ensure API key is for AI Studio and project is enabled)")
 
     # Delivery Phase
     successful_sends = 0
