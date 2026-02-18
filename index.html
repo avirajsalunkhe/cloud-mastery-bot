@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cloud Mastery Bot | Enrollment Dashboard</title>
-    <!-- Tailwind CSS -->
+    <!-- Tailwind CSS (CDN is fine for this dashboard setup) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -29,7 +29,7 @@
                     <h1 class="text-3xl font-black italic uppercase tracking-tighter">Cloud Mastery <span class="text-blue-500 not-italic">Bot</span></h1>
                     <div class="flex items-center gap-2 mt-1">
                         <div id="status-dot" class="w-2 h-2 rounded-full bg-blue-500 status-pulse"></div>
-                        <p id="status-text" class="text-slate-500 text-xs font-bold uppercase tracking-widest">Initializing UI...</p>
+                        <p id="status-text" class="text-slate-500 text-xs font-bold uppercase tracking-widest">Checking Connection...</p>
                     </div>
                 </div>
             </div>
@@ -44,15 +44,13 @@
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 <div class="lg:col-span-8 space-y-8">
                     <section>
-                        <h3 class="text-sm font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                             Choose Your Certification Path
-                        </h3>
+                        <h3 class="text-sm font-black text-slate-500 uppercase tracking-widest mb-4">Certification Tracks</h3>
                         <div id="exam-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                            <!-- JS will inject tracks here immediately -->
+                            <!-- Injected by JS -->
                         </div>
                     </section>
                     <section class="bg-slate-900/40 border border-slate-800 rounded-3xl p-8 shadow-xl">
-                        <h2 id="subscribe-title" class="text-xl font-black italic mb-6 text-slate-200 uppercase tracking-tight">Activate Daily AZ-900 Questions</h2>
+                        <h2 id="subscribe-title" class="text-xl font-black italic mb-6 text-slate-200">Activate Daily AZ-900 Questions</h2>
                         <form id="subscribe-form" class="flex flex-col sm:flex-row gap-4">
                             <input 
                                 id="email-input"
@@ -64,7 +62,7 @@
                             <button 
                                 type="submit" 
                                 id="btn-subscribe"
-                                class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-black transition-all shadow-lg shadow-blue-600/20 active:scale-95"
+                                class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-black transition-all shadow-lg shadow-blue-600/20"
                             >
                                 Enroll Path
                             </button>
@@ -76,13 +74,13 @@
                     <div class="bg-blue-600 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
                         <p class="text-blue-100 text-xs font-bold uppercase mb-2">Network Size</p>
                         <h3 id="global-count" class="text-5xl font-black text-white">0</h3>
-                        <p class="text-blue-200 text-[10px] mt-2 font-bold uppercase tracking-widest opacity-80">Active Learners Today</p>
+                        <p class="text-blue-200 text-[10px] mt-2 font-bold uppercase tracking-widest opacity-80 uppercase">Active Subscribers</p>
                     </div>
                     <div class="bg-slate-900/50 border border-slate-800 rounded-3xl p-8 group hover:border-slate-700 transition-colors">
                         <h4 class="text-amber-500 font-bold flex items-center gap-2 mb-2 italic uppercase text-xs tracking-widest">
-                            <i data-lucide="heart" class="w-4 h-4 fill-current"></i> Support Aviraj
+                            <i data-lucide="heart" class="w-4 h-4 fill-current"></i> Support Project
                         </h4>
-                        <p class="text-[10px] text-slate-500 leading-relaxed mb-4 font-medium uppercase tracking-tighter">Support the development of these free daily questions.</p>
+                        <p class="text-[10px] text-slate-500 leading-relaxed mb-4 font-medium uppercase tracking-tighter">Help me keep these daily questions free for the community.</p>
                         <a href="https://buymeacoffee.com/avirajsalunkhe" target="_blank" class="w-full block text-center bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl text-xs shadow-lg shadow-amber-500/10 transition-all">Buy me a coffee</a>
                     </div>
                 </div>
@@ -103,19 +101,15 @@
                     placeholder="Enter email to lookup..." 
                     class="flex-1 bg-slate-900 border border-slate-800 rounded-xl py-4 px-6 outline-none focus:border-blue-500 transition-colors"
                 />
-                <button type="submit" id="btn-search" class="bg-slate-800 px-8 rounded-xl font-bold transition-all hover:bg-slate-700 active:scale-95">Search</button>
+                <button type="submit" id="btn-search" class="bg-slate-800 px-8 rounded-xl font-bold transition-all hover:bg-slate-700">Search</button>
             </form>
             <div id="user-subs-list" class="space-y-4">
                 <!-- Records injected here -->
             </div>
         </main>
 
-        <footer class="mt-20 pt-10 border-t border-slate-900 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest flex flex-col md:flex-row justify-between items-center gap-4">
+        <footer class="mt-20 pt-10 border-t border-slate-900 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
             <p>© 2024 Cloud Mastery Bot • Built by Aviraj Salunkhe</p>
-            <div class="flex items-center gap-4">
-                <a href="#" class="hover:text-blue-400 transition-colors">Privacy</a>
-                <a href="#" class="hover:text-blue-400 transition-colors">Terms</a>
-            </div>
         </footer>
     </div>
 
@@ -125,8 +119,13 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
     <script>
-        // --- 1. CONFIGURATION LOADING ---
-        const GITHUB_CONFIG_PLACEHOLDER = 'GITHUB_FIREBASE_CONFIG_PLACEHOLDER';
+        /**
+         * 1. SECURE CONFIGURATION LOADING
+         * We use backticks (``) for the placeholder. This is critical because 
+         * GitHub Secrets are multi-line JSON, and standard quotes ('') will break 
+         * and cause "Uncaught SyntaxError: Invalid or unexpected token".
+         */
+        const GITHUB_CONFIG_PLACEHOLDER = `GITHUB_FIREBASE_CONFIG_PLACEHOLDER`;
         let firebaseConfig = null;
 
         function log(msg) { console.log(`[CloudBot] ${msg}`); }
@@ -134,13 +133,13 @@
         try {
             if (typeof __firebase_config !== 'undefined' && __firebase_config) {
                 firebaseConfig = JSON.parse(__firebase_config);
-                log("Loaded config from Canvas environment.");
-            } else if (GITHUB_CONFIG_PLACEHOLDER.startsWith('{')) {
-                firebaseConfig = JSON.parse(GITHUB_CONFIG_PLACEHOLDER);
-                log("Loaded config from GitHub secrets.");
+                log("Environment config detected.");
+            } else if (GITHUB_CONFIG_PLACEHOLDER.trim().startsWith('{')) {
+                firebaseConfig = JSON.parse(GITHUB_CONFIG_PLACEHOLDER.trim());
+                log("Secret config detected.");
             }
         } catch (e) {
-            console.error("Config parsing failed.");
+            console.error("Configuration parsing failed. Connection inhibited.");
         }
 
         const APP_ID = 'cloud-devops-bot';
@@ -171,13 +170,38 @@
                 dot.className = "w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]";
                 statusText.className = "text-red-500 text-xs font-bold uppercase tracking-widest";
             } else {
-                dot.className = "w-2 h-2 rounded-full bg-blue-500 status-pulse";
+                dot.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse";
                 statusText.className = "text-slate-500 text-xs font-bold uppercase tracking-widest";
             }
         }
 
+        function renderExamGrid() {
+            const grid = document.getElementById('exam-grid');
+            if (!grid) return;
+            
+            grid.innerHTML = EXAM_PATHS.map(exam => `
+                <button 
+                    onclick="selectExam('${exam.id}')"
+                    class="p-5 rounded-2xl border-2 transition-all text-left bg-slate-950 ${selectedExam === exam.id ? 'exam-card-selected border-blue-500' : 'border-slate-800/50 hover:border-slate-700'}"
+                >
+                    <i data-lucide="${exam.icon}" class="mb-3 ${exam.color}"></i>
+                    <p class="text-xs font-black ${selectedExam === exam.id ? 'text-white' : 'text-slate-300'}">${exam.id}</p>
+                    <p class="text-[10px] text-slate-500 font-medium leading-tight uppercase tracking-tighter">${exam.name.replace('Azure ', '')}</p>
+                </button>
+            `).join('');
+            if (window.lucide) {
+                try { lucide.createIcons(); } catch(e) {}
+            }
+        }
+
+        function selectExam(examId) {
+            selectedExam = examId;
+            const title = document.getElementById('subscribe-title');
+            if (title) title.innerText = `Activate Daily ${examId} Questions`;
+            renderExamGrid();
+        }
+
         function switchTab(tabId) {
-            log(`Switching to tab: ${tabId}`);
             const dashboardTab = document.getElementById('tab-content-dashboard');
             const manageTab = document.getElementById('tab-content-manage');
             const navDashboard = document.getElementById('nav-dashboard');
@@ -196,52 +220,16 @@
                 navDashboard.classList.add('text-slate-400');
                 navManage.classList.add('active-tab');
             }
-            safeLucide();
-        }
-
-        function renderExamGrid() {
-            log("Rendering exam grid...");
-            const grid = document.getElementById('exam-grid');
-            if (!grid) return;
-            
-            grid.innerHTML = EXAM_PATHS.map(exam => `
-                <button 
-                    onclick="selectExam('${exam.id}')"
-                    class="p-5 rounded-2xl border-2 transition-all text-left bg-slate-950 ${selectedExam === exam.id ? 'exam-card-selected border-blue-500' : 'border-slate-800/50 hover:border-slate-700'}"
-                >
-                    <i data-lucide="${exam.icon}" class="mb-3 ${exam.color}"></i>
-                    <p class="text-xs font-black ${selectedExam === exam.id ? 'text-white' : 'text-slate-300'}">${exam.id}</p>
-                    <p class="text-[10px] text-slate-500 font-medium leading-tight uppercase tracking-tighter">${exam.name.replace('Azure ', '')}</p>
-                </button>
-            `).join('');
-            safeLucide();
-        }
-
-        function safeLucide() {
-            if (window.lucide) {
-                try { lucide.createIcons(); } catch(e) { log("Lucide error: " + e.message); }
-            }
-        }
-
-        function selectExam(examId) {
-            log(`Selected exam: ${examId}`);
-            selectedExam = examId;
-            const title = document.getElementById('subscribe-title');
-            if (title) title.innerText = `Activate Daily ${examId} Questions`;
-            renderExamGrid();
+            if (window.lucide) lucide.createIcons();
         }
 
         // --- 4. DATA FUNCTIONS ---
         async function init() {
-            log("Starting initialization sequence...");
-            
-            // Priority 1: Render tracks immediately so UI is never empty
+            // Render tracks immediately so UI is visible before connection
             renderExamGrid();
             
-            // Priority 2: Check for config
             if (!firebaseConfig || !firebaseConfig.apiKey) {
-                log("Warning: No Firebase configuration found.");
-                setStatus('pending', 'Awaiting Action Secrets...');
+                setStatus('pending', 'Waiting for Action Secret...');
                 return;
             }
 
@@ -253,35 +241,31 @@
                 db = firebase.firestore();
                 auth = firebase.auth();
 
-                log("Attempting Anonymous Authentication...");
+                // Authentication
                 await auth.signInAnonymously();
                 
                 auth.onAuthStateChanged(user => {
                     currentUser = user;
                     if (user) {
-                        log(`Authenticated as UID: ${user.uid}`);
                         setStatus('success', 'Live Connection');
                         startGlobalListener();
                     } else {
-                        setStatus('error', 'Auth Handshake Failed');
+                        setStatus('error', 'Auth Failed');
                     }
                 });
             } catch (err) {
-                console.error("Firebase init failed:", err);
-                setStatus('error', 'Config Injection Error');
+                console.error("Init failed:", err);
+                setStatus('error', 'Setup Exception');
             }
         }
 
         function startGlobalListener() {
-            log("Starting global subscriber listener...");
             const path = db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers');
             path.onSnapshot(snap => {
-                log(`Realtime update: ${snap.size} subscribers`);
                 const countEl = document.getElementById('global-count');
                 if (countEl) countEl.innerText = snap.size;
             }, err => {
-                console.error("Firestore listener error:", err);
-                setStatus('error', 'Database Path Blocked');
+                setStatus('error', 'Access Blocked');
             });
         }
 
@@ -289,7 +273,7 @@
         document.getElementById('subscribe-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!currentUser) {
-                alert("The connection hasn't been established yet. Please wait for the 'Connection Secure' status.");
+                alert("Database connection pending...");
                 return;
             }
             
@@ -302,7 +286,6 @@
             btn.innerText = 'Enrolling...';
 
             try {
-                log(`Attempting enrollment for ${email} in ${selectedExam}`);
                 await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers').add({
                     email: email,
                     examType: selectedExam,
@@ -314,13 +297,12 @@
                 
                 msgBox.classList.remove('hidden');
                 msgBox.className = "mt-6 p-4 rounded-xl text-sm font-bold bg-emerald-950/20 border border-emerald-800 text-emerald-400 flex items-center gap-2";
-                msgBox.innerHTML = `<i data-lucide="check-circle"></i> Enrolled in ${selectedExam}! First questions arrive tomorrow.`;
+                msgBox.innerHTML = `<i data-lucide="check-circle"></i> Enrolled for ${selectedExam}! First set arrives tomorrow.`;
                 emailInput.value = '';
-                safeLucide();
-                setTimeout(() => msgBox.classList.add('hidden'), 10000);
+                if (window.lucide) lucide.createIcons();
+                setTimeout(() => msgBox.classList.add('hidden'), 8000);
             } catch (err) {
-                console.error("Enrollment error:", err);
-                alert("Enrollment failed. Ensure Anonymous Auth is enabled in your Firebase Console.");
+                alert("Enrollment failed. Check Firebase console for Anonymous Auth settings.");
             } finally {
                 btn.disabled = false;
                 btn.innerText = 'Enroll Path';
@@ -339,7 +321,6 @@
             btn.innerText = 'Searching...';
 
             try {
-                log(`Searching subscriptions for ${email}`);
                 const snap = await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers')
                     .where('email', '==', email).get();
                 
@@ -349,7 +330,7 @@
                     list.innerHTML = snap.docs.map(doc => {
                         const data = doc.data();
                         return `
-                            <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex justify-between items-center animate-in fade-in slide-in-from-bottom-2">
+                            <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex justify-between items-center">
                                 <div class="flex items-center gap-4">
                                     <div class="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-amber-500">
                                         <i data-lucide="flame" class="${data.streak > 0 ? 'fill-current' : ''}"></i>
@@ -361,18 +342,17 @@
                                 </div>
                                 <button 
                                     onclick="unsubscribe('${doc.id}')"
-                                    class="text-slate-500 hover:text-red-400 transition-all font-bold text-xs uppercase p-2 border border-transparent hover:border-red-400/20 rounded-lg"
+                                    class="text-slate-500 hover:text-red-400 transition-all font-bold text-xs uppercase p-2"
                                 >
                                     Unsubscribe
                                 </button>
                             </div>
                         `;
                     }).join('');
-                    safeLucide();
+                    if (window.lucide) lucide.createIcons();
                 }
             } catch (err) {
-                console.error("Lookup error:", err);
-                alert("Database lookup failed. Ensure rules allow read access.");
+                alert("Database lookup failed.");
             } finally {
                 btn.disabled = false;
                 btn.innerText = 'Search';
@@ -380,9 +360,8 @@
         });
 
         async function unsubscribe(docId) {
-            if (!confirm("Are you sure? This will permanently stop your daily questions and reset your streak.")) return;
+            if (!confirm("Are you sure? This will permanently delete your streak.")) return;
             try {
-                log(`Deleting record ${docId}`);
                 await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers').doc(docId).delete();
                 document.getElementById('lookup-form').dispatchEvent(new Event('submit'));
             } catch (err) {
@@ -390,7 +369,7 @@
             }
         }
 
-        // Initialize immediately regardless of config presence
+        // Initialize script
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', init);
         } else {
