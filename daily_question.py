@@ -17,6 +17,10 @@ SENDER_EMAIL = os.getenv("EMAIL_SENDER")
 SENDER_PASSWORD = os.getenv("EMAIL_PASSWORD")
 APP_ID = "cloud-devops-bot"
 
+# Custom Exception for Rate Limiting
+class GeminiRateLimitError(Exception):
+    pass
+
 # Firebase Initialization
 service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
 if not firebase_admin._apps:
@@ -32,20 +36,17 @@ db = firestore.client()
 
 def get_question_pack(exam):
     """
-    Fetches a pack of 5 questions from Gemini with an aggressive fallback ladder.
-    Handles 400 (Invalid Field), 404 (Model Not Found), 429 (Rate Limit), and Safety Blocks.
+    Fetches a pack of 5 questions from Gemini. 
+    If a 429 (Rate Limit) is hit and persists, raises GeminiRateLimitError 
+    to signal the main loop to stop and deliver what it has.
     """
     if not GEMINI_API_KEY:
         print("❌ GEMINI_API_KEY is missing.")
         return None
 
-    # Strategies prioritized by the most stable and modern models available
     strategies = [
-        ("v1beta", "gemini-2.0-flash", True),   # Best Performance
-        ("v1beta", "gemini-1.5-flash", True),   # Standard Modern
-        ("v1", "gemini-1.5-flash", False),      # Standard Stable
-        ("v1beta", "gemini-1.5-flash-8b", True),# Fast Fallback
-        ("v1beta", "gemini-1.0-pro", False),    # Legacy Fallback
+        ("v1beta", "gemini-1.5-flash", True),
+        ("v1", "gemini-1.5-flash", False),
     ]
     
     prompt = (
@@ -56,71 +57,45 @@ def get_question_pack(exam):
         "IMPORTANT: Output ONLY the raw JSON array. No markdown code blocks, no preamble."
     )
     
-    # Base payload with Safety Settings set to BLOCK_NONE to ensure technical questions pass
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "safetySettings": [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
-        ],
-        "generationConfig": {
-            "temperature": 0.8
-        }
+        "generationConfig": {"temperature": 0.8}
     }
 
     for api_version, model, use_json_mode in strategies:
         url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model}:generateContent?key={GEMINI_API_KEY}"
-        
-        current_payload = json.loads(json.dumps(payload)) # Deep copy
+        current_payload = json.loads(json.dumps(payload))
         if use_json_mode:
             current_payload["generationConfig"]["responseMimeType"] = "application/json"
         
-        # Internal retries for transient errors (429/500)
-        for retry in range(3):
+        for retry in range(2): # Minimal retries to check if it's a fluke or a hard limit
             try:
                 res = requests.post(url, json=current_payload, timeout=45)
                 
                 if res.status_code == 200:
                     data = res.json()
-                    candidates = data.get('candidates', [])
-                    
-                    if candidates and 'content' in candidates[0]:
-                        text_content = candidates[0]['content']['parts'][0]['text']
-                        print(f"✅ Generated {exam} pack using {model} ({api_version})")
-                        return text_content
-                    else:
-                        # Check why it failed (usually Safety)
-                        reason = candidates[0].get('finishReason', 'UNKNOWN') if candidates else 'EMPTY'
-                        print(f"⚠️ Strategy {model} failed with reason: {reason}. Trying next strategy...")
-                        break 
+                    if 'candidates' in data and data['candidates']:
+                        return data['candidates'][0]['content']['parts'][0]['text']
+                    break 
+                
+                elif res.status_code == 429:
+                    if retry == 1: # On the second 429, we assume the quota for the minute is dead
+                        print(f"🛑 Hard Rate Limit hit on {model}. Stopping generation phase.")
+                        raise GeminiRateLimitError("Minute quota exhausted")
+                    print(f"⚠️ 429 on {model}. Brief wait...")
+                    time.sleep(5)
                 
                 elif res.status_code == 400:
-                    err_msg = res.json().get('error', {}).get('message', '')
-                    if "responseMimeType" in err_msg:
-                        # Model doesn't support JSON mode, break to try next non-JSON strategy
-                        break 
-                    print(f"⚠️ API 400 on {model}: {err_msg[:100]}")
-                    break
+                    break # Usually a parameter error, try next strategy
                 
-                elif res.status_code == 404:
-                    # Model not available in this region/endpoint
-                    break
-                    
-                elif res.status_code == 429:
-                    wait = 2 ** (retry + 2)
-                    print(f"⚠️ Rate limited (429). Waiting {wait}s...")
-                    time.sleep(wait)
-                    
                 else:
-                    print(f"⚠️ Error {res.status_code} on {model}. Attempting strategy fallback...")
-                    break
+                    break # Other errors, try next strategy
                     
-            except Exception as e:
-                print(f"⚠️ Connection Error: {e}")
+            except GeminiRateLimitError:
+                raise
+            except Exception:
                 break
-        
+                
     return None
 
 def send_email(user_data, questions_json):
@@ -128,14 +103,12 @@ def send_email(user_data, questions_json):
         return False
         
     try:
-        # Aggressive cleaning for non-JSON mode responses
         clean_json = questions_json.strip()
         if "```json" in clean_json:
             clean_json = clean_json.split("```json")[1].split("```")[0].strip()
         elif "```" in clean_json:
             clean_json = clean_json.split("```")[1].split("```")[0].strip()
             
-        # Ensure we find the array start/end
         if not (clean_json.startswith('[') and clean_json.endswith(']')):
             start_idx = clean_json.find('[')
             end_idx = clean_json.rfind(']') + 1
@@ -143,9 +116,7 @@ def send_email(user_data, questions_json):
                 clean_json = clean_json[start_idx:end_idx]
             
         q_list = json.loads(clean_json)
-    except Exception as e:
-        print(f"❌ JSON Parse Error for {user_data['email']}: {e}")
-        print(f"Raw Output Snippet: {questions_json[:150]}...")
+    except Exception:
         return False
 
     streak = user_data.get('streak', 0) + 1
@@ -173,12 +144,11 @@ def send_email(user_data, questions_json):
                 </div>
             </div>
             <p style="color:#475569; font-size:15px; line-height:1.6; text-align:center; margin-bottom:30px;">
-                Here is your daily <b>{exam}</b> question pack. Challenge yourself to maintain your streak!
+                Here is your daily <b>{exam}</b> question pack.
             </p>
             {q_html}
-            <div style="margin-top:40px; border-top:1px solid #f1f5f9; padding-top:25px; text-align:center;">
-                <a href="{manage_url}" style="display:inline-block; background:#1e293b; color:white; padding:14px 30px; border-radius:12px; text-decoration:none; font-weight:bold; font-size:14px; transition: background 0.2s;">Manage Subscription</a>
-                <p style="margin-top:20px; color:#94a3b8; font-size:11px;">You are receiving this because you subscribed to {exam} daily questions.</p>
+            <div style="margin-top:40px; text-align:center;">
+                <a href="{manage_url}" style="display:inline-block; background:#1e293b; color:white; padding:14px 30px; border-radius:12px; text-decoration:none; font-weight:bold; font-size:14px;">Manage Subscription</a>
             </div>
         </div>
     </div>"""
@@ -193,16 +163,13 @@ def send_email(user_data, questions_json):
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
             s.login(SENDER_EMAIL, SENDER_PASSWORD)
             s.sendmail(SENDER_EMAIL, email, msg.as_string())
-        print(f"📧 Email sent successfully to {email}")
         return True
-    except Exception as e:
-        print(f"❌ SMTP Error for {email}: {e}")
+    except Exception:
         return False
 
 if __name__ == "__main__":
-    print(f"🚀 Starting daily dispatch at {datetime.now(timezone.utc)}")
+    print(f"🚀 Starting dispatch at {datetime.now(timezone.utc)}")
     
-    # Path for subscribers
     sub_ref = db.collection('artifacts').document(APP_ID).collection('public').document('data').collection('subscribers')
     subs = sub_ref.where(filter=FieldFilter('status', '==', 'active')).stream()
     
@@ -214,21 +181,23 @@ if __name__ == "__main__":
         sub_list.append(u)
         needed_exams.add(u.get('examType', 'AZ-900'))
     
-    print(f"👥 Found {len(sub_list)} active subscribers across {len(needed_exams)} exam paths.")
-    
-    if len(sub_list) == 0:
-        print("ℹ️ No subscribers to process. Ending task.")
-        exit(0)
+    print(f"👥 Subscribers: {len(sub_list)}")
 
     packs = {}
-    for exam in needed_exams:
-        print(f"🧠 Requesting {exam} questions from Gemini...")
-        pack = get_question_pack(exam)
-        if pack:
-            packs[exam] = pack
-        else:
-            print(f"❌ Failed to generate {exam} pack after trying all strategies.")
-            
+    try:
+        for exam in needed_exams:
+            print(f"🧠 Fetching {exam}...")
+            pack = get_question_pack(exam)
+            if pack:
+                packs[exam] = pack
+                print(f"✅ {exam} pack cached.")
+            else:
+                print(f"❌ Failed to fetch {exam}.")
+    except GeminiRateLimitError:
+        print("⚠️ Rate limit detected. Proceeding to mail successfully cached packs...")
+
+    # Delivery Phase
+    successful_sends = 0
     for u in sub_list:
         exam = u.get('examType', 'AZ-900')
         if exam in packs:
@@ -237,5 +206,6 @@ if __name__ == "__main__":
                     'streak': u.get('streak', 0) + 1,
                     'lastDelivery': datetime.now(timezone.utc)
                 })
+                successful_sends += 1
     
-    print("✅ Dispatch process completed.")
+    print(f"✅ Finished. Successfully delivered {successful_sends} emails.")
