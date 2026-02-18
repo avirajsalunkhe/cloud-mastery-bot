@@ -13,6 +13,8 @@
         .hidden-tab { display: none !important; }
         .exam-card-selected { border-color: #3b82f6 !important; background-color: #0f172a !important; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1); }
         [data-lucide] { width: 20px; height: 20px; }
+        /* Prevent layout shift while icons load */
+        .icon-placeholder { width: 20px; height: 20px; display: inline-block; }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen">
@@ -27,7 +29,7 @@
                     <h1 class="text-3xl font-black italic uppercase tracking-tighter">Cloud Mastery <span class="text-blue-500 not-italic">Bot</span></h1>
                     <div class="flex items-center gap-2 mt-1">
                         <div id="status-dot" class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-                        <p id="status-text" class="text-slate-500 text-xs font-bold uppercase tracking-widest">Initializing...</p>
+                        <p id="status-text" class="text-slate-500 text-xs font-bold uppercase tracking-widest">Initializing Dashboard...</p>
                     </div>
                 </div>
             </div>
@@ -45,6 +47,7 @@
                         <h3 class="text-sm font-black text-slate-500 uppercase tracking-widest mb-4">Certification Tracks</h3>
                         <div id="exam-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
                             <!-- Injected by JS -->
+                            <div class="p-8 text-center col-span-full text-slate-600 italic">Loading tracks...</div>
                         </div>
                     </section>
                     <section class="bg-slate-900/40 border border-slate-800 rounded-3xl p-8">
@@ -74,13 +77,23 @@
                         <h3 id="global-count" class="text-5xl font-black text-white">0</h3>
                         <p class="text-blue-200 text-[10px] mt-2 font-bold uppercase tracking-widest opacity-80">Active Learners Today</p>
                     </div>
-                    <a href="https://buymeacoffee.com/avirajsalunkhe" target="_blank" class="w-full block text-center bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl text-xs shadow-lg shadow-amber-500/10">Buy me a coffee</a>
+                    <div class="bg-slate-900/50 border border-slate-800 rounded-3xl p-8">
+                        <h4 class="text-amber-500 font-bold flex items-center gap-2 mb-2 italic">
+                            <i data-lucide="heart" class="w-4 h-4 fill-current"></i> Support Project
+                        </h4>
+                        <p class="text-[10px] text-slate-500 leading-relaxed mb-4 font-medium">Keep the daily questions free for everyone by supporting the development.</p>
+                        <a href="https://buymeacoffee.com/avirajsalunkhe" target="_blank" class="w-full block text-center bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl text-xs shadow-lg shadow-amber-500/10">Buy me a coffee</a>
+                    </div>
                 </div>
             </div>
         </main>
 
         <!-- Management Tab -->
         <main id="tab-content-manage" class="hidden-tab max-w-2xl mx-auto space-y-8">
+            <div class="text-center mb-6">
+                <h2 class="text-2xl font-black italic">Subscription Manager</h2>
+                <p class="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Manage streaks and email preferences</p>
+            </div>
             <form id="lookup-form" class="flex gap-4">
                 <input 
                     id="lookup-email"
@@ -108,21 +121,17 @@
 
     <script>
         // --- 1. CONFIGURATION LOADING ---
-        // This exact placeholder string is replaced by your GitHub Action Workflow
         const GITHUB_CONFIG_PLACEHOLDER = 'GITHUB_FIREBASE_CONFIG_PLACEHOLDER';
         let firebaseConfig = null;
 
         try {
-            // Check Priority: 
-            // 1. Environment Variable (Internal Canvas Preview)
-            // 2. Placeholder String (Injected by GitHub Action during deployment)
             if (typeof __firebase_config !== 'undefined' && __firebase_config) {
                 firebaseConfig = JSON.parse(__firebase_config);
             } else if (GITHUB_CONFIG_PLACEHOLDER !== 'GITHUB_FIREBASE_CONFIG_PLACEHOLDER') {
                 firebaseConfig = JSON.parse(GITHUB_CONFIG_PLACEHOLDER);
             }
         } catch (e) {
-            console.error("Critical: Firebase configuration could not be loaded.");
+            console.error("Config missing. Bot will wait for deployment injection.");
         }
 
         const APP_ID = 'cloud-devops-bot';
@@ -178,7 +187,7 @@
                 navDashboard.classList.add('text-slate-400');
                 navManage.classList.add('active-tab');
             }
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
         }
 
         function renderExamGrid() {
@@ -188,13 +197,14 @@
             grid.innerHTML = EXAM_PATHS.map(exam => `
                 <button 
                     onclick="selectExam('${exam.id}')"
-                    class="p-5 rounded-2xl border-2 transition-all text-left bg-slate-950 ${selectedExam === exam.id ? 'exam-card-selected border-blue-500' : 'border-slate-800/50'}"
+                    class="p-5 rounded-2xl border-2 transition-all text-left bg-slate-950 ${selectedExam === exam.id ? 'exam-card-selected border-blue-500' : 'border-slate-800/50 hover:border-slate-700'}"
                 >
                     <i data-lucide="${exam.icon}" class="mb-3 ${exam.color}"></i>
                     <p class="text-xs font-black ${selectedExam === exam.id ? 'text-white' : 'text-slate-300'}">${exam.id}</p>
+                    <p class="text-[10px] text-slate-500 font-medium leading-tight">${exam.name.replace('Azure ', '')}</p>
                 </button>
             `).join('');
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
         }
 
         function selectExam(examId) {
@@ -206,21 +216,21 @@
 
         // --- 4. DATA FUNCTIONS ---
         async function init() {
+            // ALWAYS render tracks first so UI is never empty
             renderExamGrid();
             
             if (!firebaseConfig || !firebaseConfig.apiKey) {
-                setStatus('error', 'Configuration Missing');
+                setStatus('pending', 'Awaiting Action Secrets...');
                 return;
             }
 
             try {
+                setStatus('pending', 'Connecting Securely...');
                 const app = firebase.initializeApp(firebaseConfig);
                 db = firebase.firestore(app);
                 auth = firebase.auth(app);
 
-                setStatus('pending', 'Authenticating...');
-                
-                // Rule 3: Auth before Queries
+                // Authentication (Anonymous is required for public repo security)
                 await auth.signInAnonymously();
                 
                 auth.onAuthStateChanged(user => {
@@ -229,31 +239,33 @@
                         setStatus('success', 'Connection Secure');
                         startGlobalListener();
                     } else {
-                        setStatus('error', 'Auth Failed');
+                        setStatus('error', 'Auth Handshake Failed');
                     }
                 });
             } catch (err) {
                 console.error(err);
-                setStatus('error', 'Startup Failed');
+                setStatus('error', 'Config Injection Error');
             }
         }
 
         function startGlobalListener() {
-            // Rule 1: Strict Paths
             const path = db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers');
             path.onSnapshot(snap => {
                 const countEl = document.getElementById('global-count');
                 if (countEl) countEl.innerText = snap.size;
             }, err => {
                 console.error(err);
-                setStatus('error', 'Permission Denied');
+                setStatus('error', 'Database Path Blocked');
             });
         }
 
         // --- 5. EVENT LISTENERS ---
         document.getElementById('subscribe-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!currentUser) return;
+            if (!currentUser) {
+                alert("The connection hasn't been established yet. If you just deployed, wait 1 minute for GitHub to process the secrets.");
+                return;
+            }
             
             const btn = document.getElementById('btn-subscribe');
             const emailInput = document.getElementById('email-input');
@@ -274,11 +286,13 @@
                 });
                 
                 msgBox.classList.remove('hidden');
-                msgBox.innerText = `Success! Enrolled in ${selectedExam}.`;
+                msgBox.className = "mt-6 p-4 rounded-xl text-sm font-bold bg-emerald-950/20 border border-emerald-800 text-emerald-400 flex items-center gap-2";
+                msgBox.innerHTML = `<i data-lucide="check-circle"></i> Enrolled in ${selectedExam}! First pack arriving tomorrow.`;
                 emailInput.value = '';
-                setTimeout(() => msgBox.classList.add('hidden'), 5000);
+                if (window.lucide) lucide.createIcons();
+                setTimeout(() => msgBox.classList.add('hidden'), 8000);
             } catch (err) {
-                alert("Enrollment failed. Ensure Anonymous Auth is enabled in Firebase.");
+                alert("Enrollment failed. Ensure Anonymous Auth is enabled in your Firebase Console.");
             } finally {
                 btn.disabled = false;
                 btn.innerText = 'Enroll Path';
@@ -301,29 +315,34 @@
                     .where('email', '==', email).get();
                 
                 if (snap.empty) {
-                    list.innerHTML = `<p class="text-center text-slate-500 py-10 font-bold uppercase text-xs">No records found</p>`;
+                    list.innerHTML = `<div class="bg-slate-900/50 p-10 rounded-2xl border-2 border-dashed border-slate-800 text-center text-slate-500 font-bold text-xs uppercase tracking-widest">No active records found</div>`;
                 } else {
                     list.innerHTML = snap.docs.map(doc => {
                         const data = doc.data();
                         return `
                             <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex justify-between items-center animate-in fade-in slide-in-from-bottom-2">
-                                <div>
-                                    <h4 class="font-black text-blue-400 uppercase text-xs">${data.examType} Path</h4>
-                                    <p class="text-lg font-bold">Streak: ${data.streak || 0} Days</p>
+                                <div class="flex items-center gap-4">
+                                    <div class="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-amber-500">
+                                        <i data-lucide="flame" class="${data.streak > 0 ? 'fill-current' : ''}"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-black text-blue-400 uppercase text-xs">${data.examType} Path</h4>
+                                        <p class="text-lg font-bold">Streak: ${data.streak || 0} Days</p>
+                                    </div>
                                 </div>
                                 <button 
                                     onclick="unsubscribe('${doc.id}')"
-                                    class="text-slate-500 hover:text-red-400 transition-all font-bold text-xs uppercase"
+                                    class="text-slate-500 hover:text-red-400 transition-all font-bold text-xs uppercase p-2"
                                 >
-                                    <i data-lucide="user-minus" class="inline-block mr-1"></i> Delete
+                                    Unsubscribe
                                 </button>
                             </div>
                         `;
                     }).join('');
-                    lucide.createIcons();
+                    if (window.lucide) lucide.createIcons();
                 }
             } catch (err) {
-                alert("Search failed.");
+                alert("Database lookup failed. Ensure rules allow read access.");
             } finally {
                 btn.disabled = false;
                 btn.innerText = 'Search';
@@ -331,7 +350,7 @@
         });
 
         async function unsubscribe(docId) {
-            if (!confirm("Are you sure? This will stop your daily questions and reset your streak.")) return;
+            if (!confirm("Are you sure? This will permanently delete your streak and stop all daily questions.")) return;
             try {
                 await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers').doc(docId).delete();
                 document.getElementById('lookup-form').dispatchEvent(new Event('submit'));
