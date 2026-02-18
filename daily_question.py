@@ -39,13 +39,15 @@ def get_question_pack(exam):
         print("❌ GEMINI_API_KEY is missing.")
         return None
 
-    # Strategies re-ordered based on successful logs.
+    # Strategies updated based on logs:
+    # 1. Standard 1.5 Flash (Removed -latest suffix to avoid 404)
+    # 2. 2.0 Flash (Confirmed exists in logs but limited)
+    # 3. 1.5 Flash 8B (Higher quota for free tier)
     strategies = [
+        ("v1beta", "gemini-1.5-flash", True),
+        ("v1", "gemini-1.5-flash", False),
         ("v1beta", "gemini-2.0-flash", True),
-        ("v1beta", "gemini-1.5-flash-latest", True),
-        ("v1", "gemini-1.5-flash-latest", False),
         ("v1beta", "gemini-1.5-flash-8b", True),
-        ("v1beta", "gemini-1.5-pro-latest", True),
     ]
     
     # Prompt updated for 1 question and 40 char limit
@@ -92,8 +94,8 @@ def get_question_pack(exam):
                     break 
                 
                 elif res.status_code == 429:
-                    # Free tier quotas reset strictly. We wait 75s to ensure the window clears completely.
-                    wait_time = 75 
+                    # Free tier quotas reset strictly. We wait 90s to ensure the window clears completely.
+                    wait_time = 90 
                     if retry == 2:
                         print(f"    🛑 Quota exhausted for {model}. Moving to next strategy.")
                         break
@@ -122,7 +124,7 @@ def get_question_pack(exam):
                 break
         
         # Buffer between model strategies to avoid triggering cumulative limits
-        time.sleep(10)
+        time.sleep(15)
                 
     return None
 
