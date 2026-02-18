@@ -172,16 +172,7 @@
          * then check for GitHub Secret injection, 
          * then fallback to the hardcoded config you provided.
          */
-        const GITHUB_PLACEHOLDER = 'REPLACE_ME_WITH_FIREBASE_CONFIG';
-        let firebaseConfig = {
-            apiKey: "AIzaSyDznqBxdYToWrYzg-X2yE_LDuzuRq-TJu0",
-            authDomain: "cloud-mastery-bot.firebaseapp.com",
-            projectId: "cloud-mastery-bot",
-            storageBucket: "cloud-mastery-bot.firebasestorage.app",
-            messagingSenderId: "928356332886",
-            appId: "1:928356332886:web:a2a321e927fd040b85d2f7",
-            measurementId: "G-53BKLTSVGV"
-        };
+        
 
         try {
             if (typeof __firebase_config !== 'undefined') {
