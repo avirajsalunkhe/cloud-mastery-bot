@@ -13,7 +13,7 @@ from email.mime.multipart import MIMEMultipart
 # --- Configuration ---
 DASHBOARD_URL = "https://avirajsalunkhe.github.io/cloud-mastery-bot" 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY") # Add this to your GitHub Secrets!
+GROQ_API_KEY = os.getenv("GROQ_API_KEY") # Ensure this is mapped in your .yml file!
 SENDER_EMAIL = os.getenv("EMAIL_SENDER")
 SENDER_PASSWORD = os.getenv("EMAIL_PASSWORD")
 APP_ID = "cloud-devops-bot"
@@ -32,11 +32,12 @@ if not firebase_admin._apps:
 db = firestore.client()
 
 def fetch_from_gemini(exam, prompt):
-    """Attempt to get questions from Gemini API."""
+    """Attempt to get questions from Gemini API with fallback for 404s and 429s."""
     if not GEMINI_API_KEY: return None
     
     strategies = [
         ("v1beta", "gemini-2.0-flash", True),
+        ("v1", "gemini-1.5-flash", False),
         ("v1beta", "gemini-1.5-flash", True),
     ]
     
@@ -55,15 +56,22 @@ def fetch_from_gemini(exam, prompt):
                 data = res.json()
                 return data['candidates'][0]['content']['parts'][0]['text']
             elif res.status_code == 429:
-                print(f"    ⚠️ Gemini {model} rate limited. Trying next...")
-        except:
-            pass
+                print(f"    ⚠️ Gemini {model} rate limited (429).")
+            elif res.status_code == 404:
+                print(f"    ⚠️ Gemini {model} not found (404).")
+            else:
+                print(f"    ⚠️ Gemini {model} error: {res.status_code}")
+        except Exception as e:
+            print(f"    ⚠️ Gemini connection error: {e}")
+            
+        # Small delay between strategies to avoid hammering
+        time.sleep(2)
     return None
 
 def fetch_from_groq(exam, prompt):
     """Attempt to get questions from Groq API (Llama 3). Highly reliable free alternative."""
     if not GROQ_API_KEY: 
-        print("    ℹ️ Groq API Key not found in secrets. Skipping fallback.")
+        print("    ℹ️ Groq API Key not found in environment. Ensure it is mapped in daily_automation.yml.")
         return None
     
     print(f"    🚀 Attempting Groq Fallback (Llama-3)...")
@@ -88,7 +96,7 @@ def fetch_from_groq(exam, prompt):
             data = res.json()
             return data['choices'][0]['message']['content']
         else:
-            print(f"    ⚠️ Groq failed with status {res.status_code}")
+            print(f"    ⚠️ Groq failed with status {res.status_code}: {res.text}")
     except Exception as e:
         print(f"    ⚠️ Groq connection error: {e}")
     return None
@@ -119,18 +127,19 @@ def refill_question_bank(exam):
         return False
 
     try:
-        # Clean JSON
+        # Clean JSON from markdown blocks
         clean_json = raw_response.strip()
         if "```json" in clean_json:
             clean_json = clean_json.split("```json")[1].split("```")[0].strip()
         elif "```" in clean_json:
             clean_json = clean_json.split("```")[1].split("```")[0].strip()
         
-        # Some providers return an object containing the array
+        # Parse response
         data = json.loads(clean_json)
         questions = data if isinstance(data, list) else data.get('questions', [])
         
         if not questions:
+            print("    ⚠️ No questions found in AI response.")
             return False
 
         # Save to Firestore Bank
@@ -164,7 +173,7 @@ def get_question_from_bank(exam):
         return found_doc.to_dict()["question_data"]
     
     if refill_question_bank(exam):
-        time.sleep(2)
+        time.sleep(2) # Buffer for Firestore consistency
         return get_question_from_bank(exam) 
         
     return None
