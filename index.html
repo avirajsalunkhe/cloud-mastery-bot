@@ -3,31 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cloud Mastery Bot | Daily Certification Prep</title>
-    <!-- Tailwind CSS for styling -->
+    <title>Cloud Mastery Bot | Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        .active-tab {
-            background-color: #2563eb;
-            color: white;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        }
-        .hidden-tab {
-            display: none;
-        }
-        .exam-card-selected {
-            border-color: #3b82f6;
-            background-color: #0f172a;
-            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
-        }
-        /* Explicit icon dimensions for rendering stability */
-        [data-lucide], .lucide {
-            width: 24px;
-            height: 24px;
-            display: inline-block;
-        }
+        .active-tab { background-color: #2563eb; color: white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .hidden-tab { display: none; }
+        .exam-card-selected { border-color: #3b82f6; background-color: #0f172a; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1); }
+        [data-lucide] { width: 20px; height: 20px; display: inline-block; }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen">
@@ -35,125 +18,60 @@
         <!-- Header -->
         <header class="flex flex-col md:flex-row items-start md:items-center justify-between mb-12 gap-6 border-b border-slate-800 pb-6">
             <div class="flex items-center gap-4">
-                <div class="bg-gradient-to-tr from-blue-600 to-blue-400 p-3 rounded-2xl shadow-xl shadow-blue-500/20">
-                    <i data-lucide="terminal" class="text-white"></i>
-                </div>
+                <div class="bg-blue-600 p-3 rounded-2xl shadow-xl shadow-blue-500/20"><i data-lucide="terminal"></i></div>
                 <div>
-                    <h1 class="text-3xl font-black tracking-tight italic uppercase">Cloud Mastery <span class="text-blue-500 not-italic">Bot</span></h1>
+                    <h1 class="text-3xl font-black italic uppercase tracking-tight">Cloud Mastery <span class="text-blue-500 not-italic">Bot</span></h1>
                     <div class="flex items-center gap-2 mt-1">
-                        <div id="connection-indicator" class="w-2 h-2 rounded-full bg-slate-600"></div>
-                        <p id="connection-status" class="text-slate-500 text-xs font-bold uppercase tracking-widest">Initializing...</p>
+                        <div id="conn-dot" class="w-2 h-2 rounded-full bg-slate-600"></div>
+                        <p id="conn-text" class="text-slate-500 text-xs font-bold uppercase tracking-widest">Initializing...</p>
                     </div>
                 </div>
             </div>
-            
-            <div class="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800 shadow-inner">
-                <button id="tab-enroll" onclick="switchTab('dashboard')" class="px-6 py-2 rounded-lg text-sm font-bold transition-all active-tab">Enroll</button>
-                <button id="tab-manage" onclick="switchTab('manage')" class="px-6 py-2 rounded-lg text-sm font-bold transition-all text-slate-400">Manage</button>
+            <div class="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800">
+                <button id="tab-enroll" onclick="switchTab('dashboard')" class="px-6 py-2 rounded-lg text-sm font-bold active-tab">Enroll</button>
+                <button id="tab-manage" onclick="switchTab('manage')" class="px-6 py-2 rounded-lg text-sm font-bold text-slate-400">Manage</button>
             </div>
         </header>
 
-        <!-- Dashboard Tab -->
+        <!-- Main Content -->
         <main id="dashboard-tab" class="space-y-8">
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 <div class="lg:col-span-8 space-y-8">
-                    <!-- Exam Selection -->
-                    <section>
-                        <h3 class="text-sm font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                            <i data-lucide="award" class="text-blue-400"></i> Choose Your Certification Path
-                        </h3>
-                        <div id="exam-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                            <!-- Injected by JS -->
-                            <p class="text-slate-500 italic col-span-full">Loading certification paths...</p>
-                        </div>
-                    </section>
-
-                    <!-- Subscribe Card -->
-                    <section class="bg-slate-900/40 border border-slate-800 rounded-3xl p-8 relative overflow-hidden group">
-                        <div class="relative z-10">
-                            <div class="flex items-center gap-3 mb-6">
-                                <div class="p-2 bg-blue-500/10 rounded-lg">
-                                    <i data-lucide="mail" class="text-blue-400"></i>
-                                </div>
-                                <h2 id="subscribe-title" class="text-xl font-black italic">Activate 5 Daily AZ-900 Questions</h2>
-                            </div>
-
-                            <form id="subscribe-form" class="flex flex-col sm:flex-row gap-4">
-                                <input type="email" id="email-input" required placeholder="Enter your email address..." 
-                                    class="flex-1 bg-slate-950 border border-slate-700 rounded-xl py-4 px-6 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-medium">
-                                <button type="submit" id="btn-subscribe" class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-black flex items-center justify-center gap-2 transition-all shadow-xl shadow-blue-500/20">
-                                    <i data-lucide="zap"></i> Enroll Path
-                                </button>
-                            </form>
-                            <div id="subscribe-msg" class="mt-6 p-4 rounded-xl hidden flex items-center gap-3 text-sm font-bold bg-slate-950 border border-slate-800">
-                                <i data-lucide="check-circle" class="text-emerald-400"></i>
-                                <span class="text-slate-300"></span>
-                            </div>
-                        </div>
+                    <section><div id="exam-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-4"></div></section>
+                    <section class="bg-slate-900/40 border border-slate-800 rounded-3xl p-8">
+                        <h2 id="sub-title" class="text-xl font-black italic mb-6">Activate 5 Daily AZ-900 Questions</h2>
+                        <form id="subscribe-form" class="flex flex-col sm:flex-row gap-4">
+                            <input type="email" id="email-input" required placeholder="Enter your email..." class="flex-1 bg-slate-950 border border-slate-700 rounded-xl py-4 px-6 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                            <button type="submit" id="btn-sub" class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-black transition-all active:scale-95">Enroll Path</button>
+                        </form>
+                        <div id="sub-msg" class="mt-6 p-4 rounded-xl hidden text-sm font-bold bg-slate-950 border border-slate-800"></div>
                     </section>
                 </div>
-
-                <!-- Sidebar Stats -->
                 <div class="lg:col-span-4 space-y-6">
-                    <div class="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-8 shadow-2xl">
-                        <p class="text-blue-100 text-xs font-bold uppercase tracking-wider mb-2">Global Network</p>
+                    <div class="bg-blue-600 rounded-3xl p-8 shadow-2xl">
+                        <p class="text-blue-100 text-xs font-bold uppercase tracking-wider mb-2">Network Size</p>
                         <h3 id="global-count" class="text-5xl font-black text-white">0</h3>
-                        <p class="text-blue-200 text-[10px] mt-2 font-bold uppercase tracking-widest opacity-80">Active Learners Today</p>
+                        <p class="text-blue-200 text-[10px] mt-2 font-bold uppercase tracking-widest">Active Cloud Learners</p>
                     </div>
-
-                    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-8 relative overflow-hidden">
-                        <h3 class="font-black text-amber-500 flex items-center gap-2 mb-4 italic">
-                           <i data-lucide="heart" class="fill-current"></i> Support Aviraj
-                        </h3>
-                        <p class="text-xs text-slate-400 leading-relaxed mb-6 font-medium">Love the daily questions? Consider buying me a coffee to support the bot!</p>
-                        <a href="https://buymeacoffee.com/avirajsalunkhe" target="_blank" class="w-full block text-center bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl text-xs transition-all shadow-lg shadow-amber-500/10">Buy me a coffee</a>
-                    </div>
+                    <a href="https://buymeacoffee.com/avirajsalunkhe" target="_blank" class="block w-full bg-amber-500 text-slate-950 font-black py-4 rounded-2xl text-center text-xs shadow-lg shadow-amber-500/10">Buy me a coffee</a>
                 </div>
             </div>
         </main>
 
-        <!-- Manage Tab -->
-        <main id="manage-tab" class="hidden-tab space-y-8">
-            <div class="max-w-3xl mx-auto space-y-8">
-                <div class="text-center mb-10">
-                    <h2 class="text-3xl font-black italic mb-2">Subscription Manager</h2>
-                    <p class="text-slate-500 text-sm font-medium">Verify your email to unsubscribe or check your streak.</p>
-                </div>
-
-                <section class="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-xl">
-                    <form id="lookup-form" class="flex flex-col sm:flex-row gap-4">
-                        <div class="relative flex-1">
-                            <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600"></i>
-                            <input type="email" id="lookup-email" required placeholder="Verify your email address..." 
-                                class="w-full bg-slate-950 border border-slate-700 rounded-xl py-4 pl-12 pr-6 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all">
-                        </div>
-                        <button type="submit" id="btn-lookup" class="bg-slate-800 hover:bg-slate-700 text-white px-8 py-4 rounded-xl font-black flex items-center justify-center gap-2 transition-all">
-                            Find Records
-                        </button>
-                    </form>
-
-                    <div id="lookup-results" class="mt-10 space-y-4">
-                        <div id="lookup-placeholder" class="py-20 text-center border-2 border-dashed border-slate-800 rounded-3xl">
-                            <i data-lucide="info" class="mx-auto mb-4 text-slate-700 h-10 w-10"></i>
-                            <p class="text-slate-500 font-bold uppercase tracking-widest text-xs">Lookup to manage your streaks and data</p>
-                        </div>
-                    </div>
-                </section>
-            </div>
+        <main id="manage-tab" class="hidden-tab max-w-2xl mx-auto space-y-8">
+            <form id="lookup-form" class="flex gap-4">
+                <input type="email" id="lookup-email" required placeholder="Enter email to lookup..." class="flex-1 bg-slate-900 border border-slate-800 rounded-xl py-4 px-6 outline-none">
+                <button type="submit" id="btn-search" class="bg-slate-800 px-8 rounded-xl font-bold">Search</button>
+            </form>
+            <div id="lookup-results" class="space-y-4"></div>
         </main>
 
-        <!-- Footer -->
-        <footer class="mt-20 pt-10 border-t border-slate-900 flex flex-col md:flex-row items-center justify-between gap-6 text-slate-600 text-[10px] font-black uppercase tracking-tighter">
+        <footer class="mt-20 pt-10 border-t border-slate-900 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
             <p>© 2024 Cloud Mastery Bot • Built by Aviraj Salunkhe</p>
-            <div class="flex items-center gap-6">
-                <a href="https://buymeacoffee.com/avirajsalunkhe" target="_blank" class="text-amber-500 hover:text-amber-400 flex items-center gap-1.5 transition-colors">
-                    <i data-lucide="coffee"></i> Support Project
-                </a>
-            </div>
         </footer>
     </div>
 
-    <!-- Firebase Scripts (v10 Compatibility Mode) -->
+    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -162,127 +80,79 @@
         /**
          * 1. SECURE CONFIGURATION LOADING
          * Priority: 
-         * A) Environment variables (Canvas Preview)
-         * B) Placeholder (Replaced by GitHub Action)
-         * C) Default Fallback (Your project keys)
+         * A) Environment variable __firebase_config (Preview)
+         * B) GITHUB_FIREBASE_CONFIG_PLACEHOLDER (Injected by GitHub Secret)
          */
-        const CONFIG_PLACEHOLDER = 'GITHUB_FIREBASE_CONFIG_PLACEHOLDER';
-        
-        
+        const SECRET_PLACEHOLDER = 'GITHUB_FIREBASE_CONFIG_PLACEHOLDER';
+        let firebaseConfig = null;
 
         try {
             if (typeof __firebase_config !== 'undefined' && __firebase_config) {
                 firebaseConfig = JSON.parse(__firebase_config);
-            } else if (!CONFIG_PLACEHOLDER.includes('PLACEHOLDER')) {
-                firebaseConfig = JSON.parse(CONFIG_PLACEHOLDER);
+            } else if (SECRET_PLACEHOLDER.startsWith('{')) {
+                firebaseConfig = JSON.parse(SECRET_PLACEHOLDER);
             }
         } catch (e) {
-            console.warn("Config parsing failed, using hardcoded fallback.");
+            console.error("Config parsing error. Connection inhibited.");
         }
 
-        const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'cloud-devops-bot';
-
-        // --- 2. APP STATE ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'cloud-devops-bot';
         let selectedExam = "AZ-900";
         let currentUser = null;
         let db, auth;
 
         const EXAMS = [
-            { id: 'AZ-900', name: 'Azure Fundamentals', icon: 'globe', color: 'text-blue-400' },
-            { id: 'AI-900', name: 'Azure AI Fundamentals', icon: 'cpu', color: 'text-purple-400' },
-            { id: 'DP-900', name: 'Azure Data Fundamentals', icon: 'database', color: 'text-emerald-400' },
-            { id: 'SC-900', name: 'Security Fundamentals', icon: 'shield', color: 'text-red-400' },
-            { id: 'PL-900', name: 'Power Platform', icon: 'zap', color: 'text-pink-400' },
-            { id: 'MS-900', name: 'Microsoft 365', icon: 'cloud', color: 'text-orange-400' }
+            { id: 'AZ-900', icon: 'globe' }, { id: 'AI-900', icon: 'cpu' },
+            { id: 'DP-900', icon: 'database' }, { id: 'SC-900', icon: 'shield' },
+            { id: 'PL-900', icon: 'zap' }, { id: 'MS-900', icon: 'cloud' }
         ];
 
-        // --- 3. UI RENDERING ---
-        function setStatus(type, message) {
-            const indicator = document.getElementById('connection-indicator');
-            const statusText = document.getElementById('connection-status');
-            if (!indicator || !statusText) return;
-            
-            statusText.innerText = message;
-            if (type === 'success') {
-                indicator.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
-                statusText.className = "text-emerald-500 text-xs font-bold uppercase tracking-widest";
-            } else if (type === 'error') {
-                indicator.className = "w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]";
-                statusText.className = "text-red-500 text-xs font-bold uppercase tracking-widest";
-            } else {
-                indicator.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]";
-                statusText.className = "text-blue-400 text-xs font-bold uppercase tracking-widest";
-            }
+        function setStatus(type, msg) {
+            const dot = document.getElementById('conn-dot');
+            const text = document.getElementById('conn-text');
+            if (text) text.innerText = msg;
+            if (dot) dot.className = `w-2 h-2 rounded-full ${type === 'success' ? 'bg-emerald-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500 animate-pulse'}`;
+        }
+
+        function switchTab(tab) {
+            document.getElementById('dashboard-tab').classList.toggle('hidden-tab', tab !== 'dashboard');
+            document.getElementById('manage-tab').classList.toggle('hidden-tab', tab !== 'manage');
+            document.getElementById('tab-enroll').classList.toggle('active-tab', tab === 'dashboard');
+            document.getElementById('tab-manage').classList.toggle('active-tab', tab === 'manage');
         }
 
         function renderExams() {
-            const grid = document.getElementById('exam-grid');
-            if (!grid) return;
-            
-            grid.innerHTML = EXAMS.map(exam => `
-                <button onclick="selectExam('${exam.id}')" class="exam-btn relative p-5 rounded-2xl border-2 transition-all text-left overflow-hidden bg-slate-950 border-slate-800/50 hover:border-slate-700 ${exam.id === selectedExam ? 'exam-card-selected' : ''}" id="btn-${exam.id}">
-                    <i data-lucide="${exam.icon}" class="mb-3 ${exam.color} transition-transform"></i>
-                    <p class="text-xs font-black mb-1 ${exam.id === selectedExam ? 'text-white' : 'text-slate-500'}">${exam.id}</p>
-                    <p class="text-[10px] text-slate-400 font-medium leading-tight">${exam.name}</p>
+            document.getElementById('exam-grid').innerHTML = EXAMS.map(e => `
+                <button onclick="selectExam('${e.id}')" class="p-5 rounded-2xl border-2 transition-all text-left bg-slate-950 ${e.id === selectedExam ? 'exam-card-selected border-blue-500' : 'border-slate-800'}">
+                    <i data-lucide="${e.icon}" class="mb-3 ${e.id === selectedExam ? 'text-blue-400' : 'text-slate-500'}"></i>
+                    <p class="text-xs font-black">${e.id}</p>
                 </button>
             `).join('');
-            
             if (window.lucide) lucide.createIcons();
         }
 
         function selectExam(id) {
             selectedExam = id;
-            document.getElementById('subscribe-title').innerText = `Activate 5 Daily ${id} Questions`;
+            const title = document.getElementById('sub-title');
+            if (title) title.innerText = `Activate 5 Daily ${id} Questions`;
             renderExams();
         }
 
-        function switchTab(tab) {
-            const dash = document.getElementById('dashboard-tab');
-            const manage = document.getElementById('manage-tab');
-            const btnEnroll = document.getElementById('tab-enroll');
-            const btnManage = document.getElementById('tab-manage');
-
-            if (tab === 'dashboard') {
-                dash.classList.remove('hidden-tab');
-                manage.classList.add('hidden-tab');
-                btnEnroll.classList.add('active-tab');
-                btnEnroll.classList.remove('text-slate-400');
-                btnManage.classList.remove('active-tab');
-                btnManage.classList.add('text-slate-400');
-            } else {
-                dash.classList.add('hidden-tab');
-                manage.classList.remove('hidden-tab');
-                btnEnroll.classList.remove('active-tab');
-                btnEnroll.classList.add('text-slate-400');
-                btnManage.classList.add('active-tab');
-                btnManage.classList.remove('text-slate-400');
-            }
-            if (window.lucide) lucide.createIcons();
-        }
-
-        // --- 4. INITIALIZATION ---
-        const init = async () => {
+        async function init() {
             renderExams();
-
-            if (!firebaseConfig || !firebaseConfig.apiKey) {
-                setStatus('error', 'Config Missing');
-                return;
-            }
-
+            if (!firebaseConfig) { setStatus('error', 'Auth Failed: No Secret Found'); return; }
+            
             try {
-                setStatus('pending', 'Connecting...');
-                firebase.initializeApp(firebaseConfig);
-                db = firebase.firestore();
-                auth = firebase.auth();
+                const app = firebase.initializeApp(firebaseConfig);
+                auth = firebase.auth(app);
+                db = firebase.firestore(app);
 
+                setStatus('pending', 'Connecting Securely...');
+
+                // Authentication (Rule 3)
                 const startAuth = async () => {
-                    const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                    if (token) {
-                        try {
-                            await auth.signInWithCustomToken(token);
-                        } catch (e) {
-                            await auth.signInAnonymously();
-                        }
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await auth.signInWithCustomToken(__initial_auth_token);
                     } else {
                         await auth.signInAnonymously();
                     }
@@ -290,151 +160,123 @@
 
                 await startAuth();
 
-                auth.onAuthStateChanged(user => {
+                auth.onAuthStateChanged((user) => {
                     currentUser = user;
                     if (user) {
-                        setStatus('success', 'Connected');
-                        db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers')
-                            .onSnapshot(snap => {
-                                document.getElementById('global-count').innerText = snap.size;
-                            }, err => {
-                                console.error(err);
-                                setStatus('error', 'Access Error');
-                            });
+                        setStatus('success', 'Authenticated Live');
+                        setupListeners();
                     } else {
-                        setStatus('pending', 'Waiting for Auth...');
+                        setStatus('error', 'Access Blocked');
                     }
                 });
-            } catch (err) {
-                console.error(err);
-                setStatus('error', 'Firebase Error');
-            }
-        };
 
-        // --- 5. EVENT LISTENERS ---
-        document.getElementById('subscribe-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!currentUser) {
-                alert("Please wait for connection to stabilize...");
-                return;
-            }
-
-            const email = document.getElementById('email-input').value.toLowerCase().trim();
-            const msgBox = document.getElementById('subscribe-msg');
-            const btn = document.getElementById('btn-subscribe');
-
-            btn.disabled = true;
-            btn.innerHTML = `<span class="animate-spin inline-block h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></span> Enrolling...`;
-
-            try {
-                // Rule 1: Strict Paths
-                await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers').add({
-                    email: email,
-                    examType: selectedExam,
-                    subscribedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    status: 'active',
-                    streak: 0,
-                    plan: 'Free Learner',
-                    userId: currentUser.uid
-                });
-
-                msgBox.classList.remove('hidden');
-                msgBox.querySelector('span').innerText = `Success! Enrolled for ${selectedExam}. Questions start tomorrow.`;
-                document.getElementById('email-input').value = '';
-            } catch (err) {
-                console.error(err);
-                alert("Subscription failed. Check console for details.");
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = `<i data-lucide="zap" class="mr-2"></i> Enroll Path`;
-                if (window.lucide) lucide.createIcons();
-                setTimeout(() => msgBox.classList.add('hidden'), 5000);
-            }
-        });
-
-        document.getElementById('lookup-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!currentUser) return;
-            const email = document.getElementById('lookup-email').value.toLowerCase().trim();
-            const btn = document.getElementById('btn-lookup');
-            const results = document.getElementById('lookup-results');
-
-            btn.disabled = true;
-            btn.innerText = "Searching...";
-
-            try {
-                // Rule 1: Strict Paths
-                const snap = await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers')
-                    .where('email', '==', email).get();
-
-                if (snap.empty) {
-                    results.innerHTML = `<p class="text-center text-slate-500 py-10 font-bold">No records found for this email.</p>`;
-                } else {
-                    results.innerHTML = snap.docs.map(doc => {
-                        const data = doc.data();
-                        return `
-                            <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex items-center justify-between group">
-                                <div class="flex items-center gap-4">
-                                    <div class="w-14 h-14 rounded-2xl bg-slate-900 flex items-center justify-center text-blue-400 border border-slate-800 shadow-lg">
-                                        <i data-lucide="flame" class="${data.streak > 0 ? 'text-amber-500' : 'text-slate-700'}"></i>
-                                    </div>
-                                    <div>
-                                        <h4 class="font-black text-lg">${data.examType} Path</h4>
-                                        <div class="flex gap-4 mt-1">
-                                           <span class="text-[10px] font-black uppercase text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded">Streak: ${data.streak || 0} Days</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <button onclick="unsubscribe('${doc.id}')" class="text-slate-500 hover:text-red-400 transition-all font-bold text-xs flex items-center gap-2">
-                                    <i data-lucide="trash-2"></i> Unsubscribe
-                                </button>
-                            </div>
-                        `;
-                    }).join('');
-                    if (window.lucide) lucide.createIcons();
-                }
-            } catch (err) {
-                alert("Search failed.");
-            } finally {
-                btn.disabled = false;
-                btn.innerText = "Find Records";
-            }
-        });
-
-        async function unsubscribe(id) {
-            if (!confirm("Are you sure you want to stop receiving questions and reset your streak?")) return;
-            try {
-                // Rule 1: Strict Paths
-                await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers').doc(id).delete();
-                alert("Successfully unsubscribed.");
-                document.getElementById('lookup-form').dispatchEvent(new Event('submit'));
-            } catch (err) {
-                console.error(err);
-                alert("Failed to delete record.");
+            } catch (e) { 
+                console.error("Firebase Error:", e);
+                setStatus('error', 'Config Error'); 
             }
         }
 
-        // Run Init on DOM Load
-        document.addEventListener('DOMContentLoaded', init);
+        function setupListeners() {
+            if (!currentUser) return;
 
-        // Handle URL Deep Link (e.g. from email links)
-        window.addEventListener('load', () => {
-            const params = new URLSearchParams(window.location.search);
-            if (params.get('tab') === 'manage') {
-                switchTab('manage');
-                const email = params.get('email');
-                if (email) {
-                    document.getElementById('lookup-email').value = email;
-                    // Wait for auth to complete before searching
-                    const checkAuth = setInterval(() => {
-                        if (currentUser) {
-                            document.getElementById('lookup-form').dispatchEvent(new Event('submit'));
-                            clearInterval(checkAuth);
+            // Database Path (Rule 1)
+            const ref = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('subscribers');
+
+            ref.onSnapshot(
+                (snap) => {
+                    const countEl = document.getElementById('global-count');
+                    if (countEl) countEl.innerText = snap.size;
+                },
+                (err) => { 
+                    console.error(err);
+                    setStatus('error', 'Firestore Denied');
+                }
+            );
+
+            document.getElementById('subscribe-form').onsubmit = async (e) => {
+                e.preventDefault();
+                if (!currentUser) return;
+
+                const btn = document.getElementById('btn-sub');
+                const emailInput = document.getElementById('email-input');
+                const msg = document.getElementById('sub-msg');
+
+                btn.disabled = true; 
+                btn.innerText = "Processing...";
+                
+                try {
+                    await ref.add({
+                        email: emailInput.value.toLowerCase().trim(),
+                        examType: selectedExam,
+                        subscribedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        status: 'active',
+                        streak: 0,
+                        userId: currentUser.uid
+                    });
+                    
+                    if (msg) {
+                        msg.classList.remove('hidden');
+                        msg.innerText = `Success! Enrolled in ${selectedExam} path.`;
+                    }
+                    if (emailInput) emailInput.value = '';
+                } catch (e) { 
+                    alert("Subscription failed. Check permissions."); 
+                } finally {
+                    btn.disabled = false; 
+                    btn.innerText = "Enroll Path";
+                }
+            };
+
+            document.getElementById('lookup-form').onsubmit = async (e) => {
+                e.preventDefault();
+                if (!currentUser) return;
+
+                const input = document.getElementById('lookup-email');
+                const results = document.getElementById('lookup-results');
+                const email = input.value.toLowerCase().trim();
+                
+                document.getElementById('btn-search').innerText = "Searching...";
+
+                try {
+                    const snap = await ref.where('email', '==', email).get();
+                    if (results) {
+                        if (snap.empty) {
+                            results.innerHTML = `<p class="text-center text-slate-500 py-4 font-bold uppercase tracking-widest text-xs">No records found</p>`;
+                        } else {
+                            results.innerHTML = snap.docs.map(doc => {
+                                const data = doc.data();
+                                return `
+                                    <div class="bg-slate-900 p-6 rounded-2xl border border-slate-800 flex justify-between items-center">
+                                        <div>
+                                            <p class="font-black text-blue-400">${data.examType}</p>
+                                            <p class="text-xs text-amber-500 font-bold uppercase tracking-widest mt-1">Streak: ${data.streak || 0} Days</p>
+                                        </div>
+                                        <button onclick="unsub('${doc.id}')" class="text-slate-500 hover:text-red-400 font-bold text-xs uppercase tracking-tighter transition-colors">Unsubscribe</button>
+                                    </div>
+                                `;
+                            }).join('');
                         }
-                    }, 1000);
+                    }
+                } catch (err) {
+                    alert("Lookup failed.");
+                } finally {
+                    document.getElementById('btn-search').innerText = "Search";
+                }
+            };
+        }
+
+        async function unsub(id) {
+            if (confirm("Stop daily study questions for this track? Your streak will reset.")) {
+                try {
+                    await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('subscribers').doc(id).delete();
+                    document.getElementById('lookup-form').dispatchEvent(new Event('submit'));
+                } catch (err) {
+                    alert("Unsubscribe failed.");
                 }
             }
-        });
+        }
+
+        window.onload = init;
     </script>
 </body>
 </html>
