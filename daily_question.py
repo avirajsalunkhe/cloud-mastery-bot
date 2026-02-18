@@ -32,15 +32,19 @@ db = firestore.client()
 
 def get_question_pack(exam):
     """
-    Fetches a pack of 5 questions from Gemini with a robust fallback system 
-    to handle 400 (Invalid Field), 404 (Model Not Found) and 429 (Rate Limit) errors.
+    Fetches a pack of 5 questions from Gemini with an aggressive fallback system.
+    Handles 400 (Invalid Field), 404 (Model Not Found) and 429 (Rate Limit).
     """
-    # Updated strategies with more common model names
+    if not GEMINI_API_KEY:
+        print("❌ GEMINI_API_KEY is missing.")
+        return None
+
+    # Strategies prioritized by stability and feature support
     strategies = [
-        ("v1beta", "gemini-1.5-flash"),
-        ("v1", "gemini-1.5-flash"),
-        ("v1beta", "gemini-pro"),
-        ("v1", "gemini-1.5-flash-8b"),
+        ("v1beta", "gemini-1.5-flash", True),   # Modern JSON mode
+        ("v1", "gemini-1.5-flash", False),      # Stable standard
+        ("v1", "gemini-1.5-flash-latest", False), # Alias standard
+        ("v1beta", "gemini-pro", False),        # Legacy fallback
     ]
     
     prompt = (
@@ -48,67 +52,69 @@ def get_question_pack(exam):
         "Sequence: Q1-Easy, Q2-Medium, Q3-Intermediate, Q4-Hard, Q5-Expert. "
         "Return a JSON array of objects. Each must have: 'question', 'options' (array of 4), "
         "'correctIndex' (0-3), 'explanation', and 'topic'. "
-        "Ensure the output is valid raw JSON."
+        "IMPORTANT: Output ONLY the raw JSON array. No markdown code blocks, no preamble."
     )
     
-    # Base payload
+    # Base payload with Safety Settings to prevent 400s due to content filtering
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
+        "safetySettings": [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ],
         "generationConfig": {
-            "temperature": 0.8
+            "temperature": 0.85
         }
     }
 
-    for api_version, model in strategies:
+    for api_version, model, use_json_mode in strategies:
         url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model}:generateContent?key={GEMINI_API_KEY}"
         
-        # Try with JSON mode first, then without if it fails with 400
-        for use_json_mode in [True, False]:
-            current_payload = json.loads(json.dumps(payload)) # deep copy
-            if use_json_mode:
-                current_payload["generationConfig"]["responseMimeType"] = "application/json"
-            
-            for retry in range(2):
-                try:
-                    res = requests.post(url, json=current_payload, timeout=30)
-                    
-                    if res.status_code == 200:
-                        data = res.json()
-                        if 'candidates' in data and data['candidates']:
-                            text_content = data['candidates'][0]['content']['parts'][0]['text']
-                            print(f"✅ Successfully generated question pack for {exam} using {model} ({api_version}, json_mode={use_json_mode})")
-                            return text_content
-                    
-                    elif res.status_code == 400:
-                        error_msg = res.text
-                        if "responseMimeType" in error_msg or "response_mime_type" in error_msg:
-                            print(f"⚠️ Model {model} does not support JSON mode on {api_version}. Retrying without MIME type...")
-                            break # Break retry loop to try use_json_mode=False
-                        else:
-                            print(f"⚠️ API Error 400 on {model}/{api_version}: {error_msg[:100]}")
-                            break # Try next strategy
-                    
-                    elif res.status_code == 404:
-                        print(f"⚠️ Strategy failed: {model} not found on {api_version}.")
-                        break # Try next strategy
-                        
-                    elif res.status_code == 429:
-                        wait_time = 2 ** (retry + 1)
-                        print(f"⚠️ Rate limited (429). Retrying in {wait_time}s...")
-                        time.sleep(wait_time)
-                        
+        current_payload = json.loads(json.dumps(payload)) # Deep copy
+        if use_json_mode:
+            current_payload["generationConfig"]["responseMimeType"] = "application/json"
+        
+        # Internal retries for transient errors (429/500)
+        for retry in range(3):
+            try:
+                res = requests.post(url, json=current_payload, timeout=45)
+                
+                if res.status_code == 200:
+                    data = res.json()
+                    if 'candidates' in data and data['candidates']:
+                        text_content = data['candidates'][0]['content']['parts'][0]['text']
+                        print(f"✅ Generated {exam} pack using {model} ({api_version}, json_mode={use_json_mode})")
+                        return text_content
                     else:
-                        print(f"⚠️ API Error {res.status_code} on {model}/{api_version}. Debug: {res.text[:100]}")
-                        break
-                        
-                except Exception as e:
-                    print(f"⚠️ Request Error: {e}")
+                        print(f"⚠️ Empty response from {model}. Safety filters might be blocking.")
+                        break # Try next strategy
+                
+                elif res.status_code == 400:
+                    err_json = res.json()
+                    msg = err_json.get('error', {}).get('message', '')
+                    if "responseMimeType" in msg or "response_mime_type" in msg:
+                        # Fallback to non-JSON mode within this strategy is handled by the next iteration of the strategy list
+                        break 
+                    print(f"⚠️ API 400 on {model}: {msg[:100]}")
                     break
-            
-            # If we were in JSON mode and failed due to a 400, the 'break' took us here.
-            # We will now loop to use_json_mode=False. 
-            # If it was a 404 or other error, we'll continue to the next strategy.
-            if res.status_code != 400:
+                
+                elif res.status_code == 404:
+                    # Model not found on this endpoint
+                    break
+                    
+                elif res.status_code == 429:
+                    wait = 2 ** (retry + 2)
+                    print(f"⚠️ Rate limited (429). Waiting {wait}s...")
+                    time.sleep(wait)
+                    
+                else:
+                    print(f"⚠️ Error {res.status_code} on {model}. Retrying...")
+                    time.sleep(2)
+                    
+            except Exception as e:
+                print(f"⚠️ Connection Error: {e}")
                 break
         
     return None
@@ -118,18 +124,24 @@ def send_email(user_data, questions_json):
         return False
         
     try:
-        # Strip potential markdown formatting if Gemini includes it
+        # Aggressive cleaning for non-JSON mode responses
         clean_json = questions_json.strip()
-        if clean_json.startswith("```json"):
+        if "```json" in clean_json:
             clean_json = clean_json.split("```json")[1].split("```")[0].strip()
-        elif clean_json.startswith("```"):
+        elif "```" in clean_json:
             clean_json = clean_json.split("```")[1].split("```")[0].strip()
+            
+        # Remove potential preamble text if it exists outside code blocks
+        if not clean_json.startswith('['):
+            start_idx = clean_json.find('[')
+            end_idx = clean_json.rfind(']') + 1
+            if start_idx != -1 and end_idx != -1:
+                clean_json = clean_json[start_idx:end_idx]
             
         q_list = json.loads(clean_json)
     except Exception as e:
-        print(f"❌ Failed to parse JSON for {user_data['email']}: {e}")
-        # Log a snippet of the failed content for debugging
-        print(f"Debug Snippet: {questions_json[:100]}...")
+        print(f"❌ JSON Parse Error for {user_data['email']}: {e}")
+        print(f"Raw Output Snippet: {questions_json[:150]}...")
         return False
 
     streak = user_data.get('streak', 0) + 1
