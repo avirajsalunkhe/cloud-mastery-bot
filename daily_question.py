@@ -39,14 +39,15 @@ def get_question_pack(exam):
         print("❌ GEMINI_API_KEY is missing.")
         return None
 
-    # Strategies prioritized by likelihood of availability and quota.
-    # gemini-1.5-flash-8b is the best for high-frequency free tier usage.
+    # Strategies re-ordered based on your successful logs.
+    # gemini-2.0-flash is the only one that didn't return 404.
+    # Added '-latest' aliases which are often more reliable.
     strategies = [
-        ("v1beta", "gemini-1.5-flash-8b", True),
-        ("v1beta", "gemini-1.5-flash", True),
         ("v1beta", "gemini-2.0-flash", True),
-        ("v1", "gemini-1.5-flash", False),
-        ("v1beta", "gemini-pro", False),
+        ("v1beta", "gemini-1.5-flash-latest", True),
+        ("v1", "gemini-1.5-flash-latest", False),
+        ("v1beta", "gemini-1.5-flash-8b", True),
+        ("v1beta", "gemini-1.5-pro-latest", True),
     ]
     
     prompt = (
@@ -92,12 +93,12 @@ def get_question_pack(exam):
                     break 
                 
                 elif res.status_code == 429:
-                    # Free tier quotas reset strictly. We wait 70s to ensure the window clears.
-                    wait_time = 70 
+                    # Free tier quotas reset strictly. We wait 75s to ensure the window clears completely.
+                    wait_time = 75 
                     if retry == 2:
                         print(f"    🛑 Quota exhausted for {model}. Moving to next strategy.")
                         break
-                    print(f"    ⚠️ 429 Rate Limit. Waiting {wait_time}s for quota reset...")
+                    print(f"    ⚠️ 429 Rate Limit. Quota full. Cooling down for {wait_time}s...")
                     time.sleep(wait_time)
                 
                 elif res.status_code == 400:
@@ -121,8 +122,8 @@ def get_question_pack(exam):
                 print(f"    ⚠️ Connection error: {e}")
                 break
         
-        # Small buffer between model strategies
-        time.sleep(5)
+        # Buffer between model strategies to avoid triggering cumulative limits
+        time.sleep(10)
                 
     return None
 
