@@ -37,10 +37,12 @@ def refill_question_bank(exam):
     """
     print(f"🧠 Bank empty for {exam}. Requesting batch of 10 questions from Gemini...")
     
-    # We prioritize 2.0-flash as it's the only one not returning 404 in your logs
+    # Expanded strategies to bypass 404s and 429s
     strategies = [
         ("v1beta", "gemini-2.0-flash", True),
         ("v1beta", "gemini-1.5-flash", True),
+        ("v1", "gemini-1.5-flash", False),
+        ("v1beta", "gemini-1.5-flash-8b", True),
     ]
 
     prompt = (
@@ -48,7 +50,7 @@ def refill_question_bank(exam):
         "Each question text MUST be extremely short (maximum 40 characters). "
         "Return a JSON array of 10 objects. Each object must have: "
         "'question', 'options' (array of 4), 'correctIndex' (0-3), 'explanation', and 'topic'. "
-        "IMPORTANT: Output ONLY the raw JSON array. No markdown."
+        "IMPORTANT: Output ONLY the raw JSON array. No markdown code blocks."
     )
 
     payload = {
@@ -62,37 +64,54 @@ def refill_question_bank(exam):
         if use_json_mode:
             current_payload["generationConfig"]["responseMimeType"] = "application/json"
         
-        try:
-            res = requests.post(url, json=current_payload, timeout=60)
-            if res.status_code == 200:
-                data = res.json()
-                text_content = data['candidates'][0]['content']['parts'][0]['text']
+        # We try each model strategy twice with significant cooling for 429s
+        for attempt in range(2):
+            try:
+                res = requests.post(url, json=current_payload, timeout=60)
                 
-                # Parse the batch
-                clean_json = text_content.strip()
-                if "```json" in clean_json:
-                    clean_json = clean_json.split("```json")[1].split("```")[0].strip()
+                if res.status_code == 200:
+                    data = res.json()
+                    text_content = data['candidates'][0]['content']['parts'][0]['text']
+                    
+                    # Parse the batch
+                    clean_json = text_content.strip()
+                    if "```json" in clean_json:
+                        clean_json = clean_json.split("```json")[1].split("```")[0].strip()
+                    elif "```" in clean_json:
+                        clean_json = clean_json.split("```")[1].split("```")[0].strip()
+                    
+                    questions = json.loads(clean_json)
+                    
+                    # Save to Firestore Bank
+                    bank_ref = db.collection('artifacts').document(APP_ID).collection('public').document('data').collection('question_bank')
+                    for q in questions:
+                        bank_ref.add({
+                            "examType": exam,
+                            "question_data": json.dumps([q]), 
+                            "used": False,
+                            "createdAt": datetime.now(timezone.utc)
+                        })
+                    print(f"✅ Successfully added 10 new questions to {exam} bank using {model}.")
+                    return True
                 
-                questions = json.loads(clean_json)
+                elif res.status_code == 429:
+                    # RPM limits on free tier often reset every 60 seconds.
+                    # We wait 70s to ensure the window is cleared.
+                    print(f"    ⚠️ Rate limit on {model}. Quota full. Cooling down for 70s...")
+                    time.sleep(70)
+                    continue # Retry this specific model once more after cooling
                 
-                # Save to Firestore Bank
-                bank_ref = db.collection('artifacts').document(APP_ID).collection('public').document('data').collection('question_bank')
-                for q in questions:
-                    bank_ref.add({
-                        "examType": exam,
-                        "question_data": json.dumps([q]), # Store as list of 1 for consistency
-                        "used": False,
-                        "createdAt": datetime.now(timezone.utc)
-                    })
-                print(f"✅ Successfully added 10 new questions to {exam} bank.")
-                return True
-            elif res.status_code == 429:
-                print(f"    ⚠️ Rate limit on {model}. Waiting 30s...")
-                time.sleep(30)
-            else:
-                print(f"    ⚠️ Strategy {model} failed ({res.status_code})")
-        except Exception as e:
-            print(f"    ⚠️ Error refilling bank: {e}")
+                elif res.status_code == 404:
+                    print(f"    ⚠️ Strategy {model} via {api_version} failed (404: Not Found).")
+                    break # Skip to next strategy immediately
+                
+                else:
+                    print(f"    ⚠️ Strategy {model} failed with code {res.status_code}")
+                    break
+                    
+            except Exception as e:
+                print(f"    ⚠️ Error in strategy {model}: {e}")
+                break
             
     return False
 
@@ -106,14 +125,21 @@ def get_question_from_bank(exam):
     # Check for an unused question
     query = bank_ref.where(filter=FieldFilter("examType", "==", exam)).where(filter=FieldFilter("used", "==", False)).limit(1).stream()
     
+    found_doc = None
     for doc in query:
+        found_doc = doc
+        break
+        
+    if found_doc:
         # Mark as used immediately
-        bank_ref.document(doc.id).update({"used": True, "usedAt": datetime.now(timezone.utc)})
-        return doc.to_dict()["question_data"]
+        bank_ref.document(found_doc.id).update({"used": True, "usedAt": datetime.now(timezone.utc)})
+        return found_doc.to_dict()["question_data"]
     
     # If we reached here, bank is empty
     if refill_question_bank(exam):
-        return get_question_from_bank(exam) # Recursive call once refilled
+        # We need a small delay to allow Firestore indexes/consistency to catch up
+        time.sleep(2)
+        return get_question_from_bank(exam) 
         
     return None
 
