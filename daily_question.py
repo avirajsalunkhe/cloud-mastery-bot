@@ -33,62 +33,82 @@ db = firestore.client()
 def get_question_pack(exam):
     """
     Fetches a pack of 5 questions from Gemini with a robust fallback system 
-    to handle 404 (Model Not Found) and 429 (Rate Limit) errors.
+    to handle 400 (Invalid Field), 404 (Model Not Found) and 429 (Rate Limit) errors.
     """
-    # List of endpoints and models to try in order of preference
-    # Some API keys/regions only have access to specific versions
+    # Updated strategies with more common model names
     strategies = [
-        ("v1", "gemini-1.5-flash"),
         ("v1beta", "gemini-1.5-flash"),
+        ("v1", "gemini-1.5-flash"),
+        ("v1beta", "gemini-pro"),
         ("v1", "gemini-1.5-flash-8b"),
-        ("v1beta", "gemini-1.0-pro"),
     ]
     
     prompt = (
         f"Generate exactly 5 multiple-choice questions for the {exam} certification. "
         "Sequence: Q1-Easy, Q2-Medium, Q3-Intermediate, Q4-Hard, Q5-Expert. "
         "Return a JSON array of objects. Each must have: 'question', 'options' (array of 4), "
-        "'correctIndex' (0-3), 'explanation', and 'topic'."
+        "'correctIndex' (0-3), 'explanation', and 'topic'. "
+        "Ensure the output is valid raw JSON."
     )
     
+    # Base payload
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "responseMimeType": "application/json",
             "temperature": 0.8
         }
     }
 
-    for attempt, (api_version, model) in enumerate(strategies):
+    for api_version, model in strategies:
         url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model}:generateContent?key={GEMINI_API_KEY}"
         
-        # Internal retry loop for transient errors (429, 500)
-        for retry in range(2):
-            try:
-                res = requests.post(url, json=payload, timeout=30)
-                
-                if res.status_code == 200:
-                    data = res.json()
-                    if 'candidates' in data and data['candidates']:
-                        text_content = data['candidates'][0]['content']['parts'][0]['text']
-                        print(f"✅ Successfully generated question pack for {exam} using {model} ({api_version})")
-                        return text_content
-                
-                elif res.status_code == 404:
-                    print(f"⚠️ Strategy failed: {model} not found on {api_version}. Trying next strategy...")
-                    break # Break out of internal retry to try next strategy
+        # Try with JSON mode first, then without if it fails with 400
+        for use_json_mode in [True, False]:
+            current_payload = json.loads(json.dumps(payload)) # deep copy
+            if use_json_mode:
+                current_payload["generationConfig"]["responseMimeType"] = "application/json"
+            
+            for retry in range(2):
+                try:
+                    res = requests.post(url, json=current_payload, timeout=30)
                     
-                elif res.status_code == 429:
-                    wait_time = 2 ** (retry + 1)
-                    print(f"⚠️ Rate limited (429). Retrying in {wait_time}s...")
-                    time.sleep(wait_time)
+                    if res.status_code == 200:
+                        data = res.json()
+                        if 'candidates' in data and data['candidates']:
+                            text_content = data['candidates'][0]['content']['parts'][0]['text']
+                            print(f"✅ Successfully generated question pack for {exam} using {model} ({api_version}, json_mode={use_json_mode})")
+                            return text_content
                     
-                else:
-                    print(f"⚠️ API Error {res.status_code} on {model}/{api_version}. Debug: {res.text[:100]}")
-                    break # Try next strategy
+                    elif res.status_code == 400:
+                        error_msg = res.text
+                        if "responseMimeType" in error_msg or "response_mime_type" in error_msg:
+                            print(f"⚠️ Model {model} does not support JSON mode on {api_version}. Retrying without MIME type...")
+                            break # Break retry loop to try use_json_mode=False
+                        else:
+                            print(f"⚠️ API Error 400 on {model}/{api_version}: {error_msg[:100]}")
+                            break # Try next strategy
                     
-            except Exception as e:
-                print(f"⚠️ Request Error: {e}")
+                    elif res.status_code == 404:
+                        print(f"⚠️ Strategy failed: {model} not found on {api_version}.")
+                        break # Try next strategy
+                        
+                    elif res.status_code == 429:
+                        wait_time = 2 ** (retry + 1)
+                        print(f"⚠️ Rate limited (429). Retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                        
+                    else:
+                        print(f"⚠️ API Error {res.status_code} on {model}/{api_version}. Debug: {res.text[:100]}")
+                        break
+                        
+                except Exception as e:
+                    print(f"⚠️ Request Error: {e}")
+                    break
+            
+            # If we were in JSON mode and failed due to a 400, the 'break' took us here.
+            # We will now loop to use_json_mode=False. 
+            # If it was a 404 or other error, we'll continue to the next strategy.
+            if res.status_code != 400:
                 break
         
     return None
@@ -108,6 +128,8 @@ def send_email(user_data, questions_json):
         q_list = json.loads(clean_json)
     except Exception as e:
         print(f"❌ Failed to parse JSON for {user_data['email']}: {e}")
+        # Log a snippet of the failed content for debugging
+        print(f"Debug Snippet: {questions_json[:100]}...")
         return False
 
     streak = user_data.get('streak', 0) + 1
