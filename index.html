@@ -22,9 +22,11 @@
             background-color: #0f172a;
             box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
         }
-        [data-lucide] {
-            width: 20px;
-            height: 20px;
+        /* Ensure icons are visible */
+        [data-lucide], .lucide {
+            width: 24px;
+            height: 24px;
+            display: inline-block;
         }
     </style>
 </head>
@@ -59,6 +61,7 @@
                         </h3>
                         <div id="exam-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
                             <!-- Injected by JS -->
+                            <p class="text-slate-500 italic col-span-full">Loading certification paths...</p>
                         </div>
                     </section>
 
@@ -147,23 +150,26 @@
         </footer>
     </div>
 
-    <!-- Firebase Scripts (v10 Compatibility) -->
+    <!-- Firebase Scripts -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
     <script>
-        // --- 1. FIREBASE CONFIGURATION ---
-        // Using environment variables provided by the Canvas platform
-        const firebaseConfig = JSON.parse(__firebase_config);
+        // --- 1. FIREBASE CONFIGURATION SAFETY ---
+        let firebaseConfig = {};
+        try {
+            firebaseConfig = JSON.parse(__firebase_config);
+        } catch (e) {
+            console.error("Firebase config missing or invalid. Dashboard will operate in UI-only mode.");
+        }
+
         const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'cloud-devops-bot';
 
-        // --- 2. APP STATE & CONFIG ---
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-        const auth = firebase.auth();
+        // --- 2. APP STATE ---
         let selectedExam = "AZ-900";
         let currentUser = null;
+        let db, auth;
 
         const EXAMS = [
             { id: 'AZ-900', name: 'Azure Fundamentals', icon: 'globe', color: 'text-blue-400' },
@@ -177,6 +183,8 @@
         // --- 3. UI RENDERING ---
         function renderExams() {
             const grid = document.getElementById('exam-grid');
+            if (!grid) return;
+            
             grid.innerHTML = EXAMS.map(exam => `
                 <button onclick="selectExam('${exam.id}')" class="exam-btn relative p-5 rounded-2xl border-2 transition-all text-left overflow-hidden bg-slate-950 border-slate-800/50 hover:border-slate-700 ${exam.id === selectedExam ? 'exam-card-selected' : ''}" id="btn-${exam.id}">
                     <i data-lucide="${exam.icon}" class="mb-3 ${exam.color} transition-transform"></i>
@@ -184,7 +192,10 @@
                     <p class="text-[10px] text-slate-400 font-medium leading-tight">${exam.name}</p>
                 </button>
             `).join('');
-            lucide.createIcons();
+            
+            if (window.lucide) {
+                lucide.createIcons();
+            }
         }
 
         function selectExam(id) {
@@ -214,40 +225,51 @@
                 btnManage.classList.add('active-tab');
                 btnManage.classList.remove('text-slate-400');
             }
+            if (window.lucide) lucide.createIcons();
         }
 
-        // --- 4. DATA LOGIC ---
-        // Initialize Authentication first as per Rule 3
-        const startAuth = async () => {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                try {
-                    await auth.signInWithCustomToken(__initial_auth_token);
-                } catch (e) {
+        // --- 4. INITIALIZATION ---
+        const init = async () => {
+            // Render UI immediately so it's not a black/empty page
+            renderExams();
+
+            if (!firebaseConfig.apiKey) return;
+
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            auth = firebase.auth();
+
+            // Rule 3: Auth before queries
+            const startAuth = async () => {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    try {
+                        await auth.signInWithCustomToken(__initial_auth_token);
+                    } catch (e) {
+                        await auth.signInAnonymously();
+                    }
+                } else {
                     await auth.signInAnonymously();
                 }
-            } else {
-                await auth.signInAnonymously();
-            }
+            };
+            await startAuth();
+
+            auth.onAuthStateChanged(user => {
+                currentUser = user;
+                if (!user) return;
+                
+                // Stats listener
+                db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers')
+                    .onSnapshot(snap => {
+                        document.getElementById('global-count').innerText = snap.size;
+                    }, err => console.error("Firestore access denied. Check rules."));
+            });
         };
-        startAuth();
 
-        auth.onAuthStateChanged(user => {
-            currentUser = user;
-            if (!user) return;
-            
-            // Stats listener (Rule 1: Strict Paths)
-            db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers')
-                .onSnapshot(snap => {
-                    document.getElementById('global-count').innerText = snap.size;
-                }, err => {
-                    console.error("Snapshot error:", err);
-                });
-        });
-
+        // --- 5. EVENT LISTENERS ---
         document.getElementById('subscribe-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!currentUser) {
-                alert("Authenticating... please try again in a second.");
+                alert("Please wait for connection to stabilize...");
                 return;
             }
 
@@ -256,10 +278,9 @@
             const btn = document.getElementById('btn-subscribe');
 
             btn.disabled = true;
-            btn.innerHTML = `<span class="animate-spin inline-block h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></span> Enrolling...`;
+            btn.innerHTML = `<span class="animate-spin inline-block h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2"></span>...`;
 
             try {
-                // Following Rule 1 path structure
                 await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers').add({
                     email: email,
                     examType: selectedExam,
@@ -271,15 +292,14 @@
                 });
 
                 msgBox.classList.remove('hidden');
-                msgBox.querySelector('span').innerText = `Success! Check your inbox for ${selectedExam} tomorrow.`;
+                msgBox.querySelector('span').innerText = `Success! Enrolled in ${selectedExam} track.`;
                 document.getElementById('email-input').value = '';
             } catch (err) {
-                console.error(err);
-                alert("Subscription failed. Check console for details.");
+                alert("Action failed. Check console for permission errors.");
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = `<i data-lucide="zap" class="mr-2"></i> Enroll Path`;
-                lucide.createIcons();
+                if (window.lucide) lucide.createIcons();
                 setTimeout(() => msgBox.classList.add('hidden'), 5000);
             }
         });
@@ -287,7 +307,6 @@
         document.getElementById('lookup-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!currentUser) return;
-
             const email = document.getElementById('lookup-email').value.toLowerCase().trim();
             const btn = document.getElementById('btn-lookup');
             const results = document.getElementById('lookup-results');
@@ -296,39 +315,36 @@
             btn.innerText = "Searching...";
 
             try {
-                // Rule 1 path structure
                 const snap = await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers')
                     .where('email', '==', email).get();
 
                 if (snap.empty) {
-                    results.innerHTML = `<p class="text-center text-slate-500 py-10 font-bold">No records found for this email.</p>`;
+                    results.innerHTML = `<p class="text-center text-slate-500 py-10 font-bold">No records found.</p>`;
                 } else {
                     results.innerHTML = snap.docs.map(doc => {
                         const data = doc.data();
                         return `
                             <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex items-center justify-between group">
                                 <div class="flex items-center gap-4">
-                                    <div class="w-14 h-14 rounded-2xl bg-slate-900 flex items-center justify-center text-blue-400 border border-slate-800 shadow-lg">
+                                    <div class="w-14 h-14 rounded-2xl bg-slate-900 flex items-center justify-center text-blue-400 border border-slate-800">
                                         <i data-lucide="flame" class="${data.streak > 0 ? 'text-amber-500' : 'text-slate-700'}"></i>
                                     </div>
                                     <div>
-                                        <h4 class="font-black text-lg">${data.examType} Path</h4>
+                                        <h4 class="font-black text-lg">${data.examType}</h4>
                                         <div class="flex gap-4 mt-1">
-                                           <span class="text-[10px] font-black uppercase text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded">Streak: ${data.streak || 0} Days</span>
-                                           <span class="text-[10px] font-black uppercase text-slate-400 bg-slate-800 px-2 py-0.5 rounded">${data.plan || 'Free'}</span>
+                                           <span class="text-[10px] font-black uppercase text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded">Streak: ${data.streak || 0}</span>
                                         </div>
                                     </div>
                                 </div>
-                                <button onclick="unsubscribe('${doc.id}')" class="flex items-center gap-2 px-4 py-2 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all font-bold text-xs">
-                                    <i data-lucide="trash-2"></i> Unsubscribe
+                                <button onclick="unsubscribe('${doc.id}')" class="text-slate-500 hover:text-red-400 transition-all font-bold text-xs flex items-center gap-2">
+                                    <i data-lucide="trash-2"></i> Delete
                                 </button>
                             </div>
                         `;
                     }).join('');
-                    lucide.createIcons();
+                    if (window.lucide) lucide.createIcons();
                 }
             } catch (err) {
-                console.error(err);
                 alert("Search failed.");
             } finally {
                 btn.disabled = false;
@@ -337,36 +353,33 @@
         });
 
         async function unsubscribe(id) {
-            if (!confirm("Are you sure you want to stop receiving questions and reset your streak?")) return;
+            if (!confirm("Are you sure?")) return;
             try {
-                // Rule 1 path structure
                 await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers').doc(id).delete();
-                alert("Successfully unsubscribed.");
                 document.getElementById('lookup-form').dispatchEvent(new Event('submit'));
             } catch (err) {
-                console.error(err);
-                alert("Failed to unsubscribe.");
+                alert("Error deleting record.");
             }
         }
 
-        // Deep Link Check
-        window.onload = () => {
-            renderExams();
+        // Run Init
+        document.addEventListener('DOMContentLoaded', init);
+
+        // Handle URL Deep Link
+        window.addEventListener('load', () => {
             const params = new URLSearchParams(window.location.search);
             if (params.get('tab') === 'manage') {
                 switchTab('manage');
-                if (params.get('email')) {
-                    document.getElementById('lookup-email').value = params.get('email');
-                    // Wait for auth before searching
-                    const checkAuth = setInterval(() => {
-                        if (currentUser) {
-                            document.getElementById('lookup-form').dispatchEvent(new Event('submit'));
-                            clearInterval(checkAuth);
-                        }
-                    }, 500);
+                const email = params.get('email');
+                if (email) {
+                    document.getElementById('lookup-email').value = email;
+                    // Auto search after a short delay for auth
+                    setTimeout(() => {
+                        if (currentUser) document.getElementById('lookup-form').dispatchEvent(new Event('submit'));
+                    }, 2000);
                 }
             }
-        };
+        });
     </script>
 </body>
 </html>
