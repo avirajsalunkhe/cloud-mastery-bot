@@ -10,7 +10,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # --- Configuration ---
-DASHBOARD_URL = "https://your-username.github.io/cloud-mastery-bot" 
+DASHBOARD_URL = "https://avirajsalunkhe.github.io/cloud-mastery-bot" 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 SENDER_EMAIL = os.getenv("EMAIL_SENDER")
 SENDER_PASSWORD = os.getenv("EMAIL_PASSWORD")
@@ -23,17 +23,14 @@ if not firebase_admin._apps:
     try:
         cred = credentials.Certificate(json.loads(service_account_json))
         firebase_admin.initialize_app(cred)
+        print("✅ Firebase initialized successfully.")
     except Exception as e:
-        print(f"Failed to initialize Firebase: {e}")
+        print(f"❌ Failed to initialize Firebase: {e}")
         exit(1)
 
 db = firestore.client()
 
 def get_question_pack(exam):
-    """
-    Fetches a 5-question pack with exponential backoff as per requirements.
-    Retries up to 5 times with delays of 1s, 2s, 4s, 8s, 16s.
-    """
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
     
     prompt = (
@@ -56,20 +53,17 @@ def get_question_pack(exam):
             res = requests.post(url, json=payload, timeout=30)
             if res.status_code == 200:
                 data = res.json()
-                # Safety check for the 'candidates' key to avoid KeyError
-                if 'candidates' in data and data['candidates'] and len(data['candidates']) > 0:
-                    content = data['candidates'][0].get('content', {})
-                    parts = content.get('parts', [])
-                    if parts and len(parts) > 0:
-                        return parts[0].get('text')
-            
-            # if status code is 429 or 5xx, or candidates missing, we retry
-        except Exception:
-            pass # Silent retry as per instructions
+                if 'candidates' in data and data['candidates']:
+                    text_content = data['candidates'][0]['content']['parts'][0]['text']
+                    print(f"✅ Successfully generated question pack for {exam}")
+                    return text_content
+            else:
+                print(f"⚠️ Gemini API returned status {res.status_code}. Retrying...")
+        except Exception as e:
+            print(f"⚠️ API Error: {e}. Retrying...")
         
-        time.sleep(2**i) # 1s, 2s, 4s, 8s, 16s
+        time.sleep(2**i)
         
-    print(f"Error: Failed to generate question pack for {exam} after 5 attempts.")
     return None
 
 def send_email(user_data, questions_json):
@@ -78,8 +72,7 @@ def send_email(user_data, questions_json):
         
     try:
         q_list = json.loads(questions_json)
-    except Exception as e:
-        print(f"JSON Parsing Error: {e}")
+    except Exception:
         return False
 
     streak = user_data.get('streak', 0) + 1
@@ -123,14 +116,16 @@ def send_email(user_data, questions_json):
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
             s.login(SENDER_EMAIL, SENDER_PASSWORD)
             s.sendmail(SENDER_EMAIL, email, msg.as_string())
+        print(f"📧 Email sent successfully to {email}")
         return True
     except Exception as e:
-        print(f"SMTP Error for {email}: {e}")
+        print(f"❌ SMTP Error for {email}: {e}")
         return False
 
 if __name__ == "__main__":
-    # Fetch active subscribers
-    sub_ref = db.collection('artifacts').document(APP_ID).collection('public').document('data').collection('subscribers')
+    print(f"🚀 Starting daily dispatch at {datetime.now(timezone.utc)}")
+    
+    sub_ref = db.collection('artifacts').document(APP_ID).collection('public').doc('data').collection('subscribers')
     subs = sub_ref.where('status', '==', 'active').stream()
     
     sub_list = []
@@ -141,14 +136,19 @@ if __name__ == "__main__":
         sub_list.append(u)
         needed_exams.add(u.get('examType', 'AZ-900'))
     
-    # Batch generate packs to save quota
+    print(f"👥 Found {len(sub_list)} active subscribers across {len(needed_exams)} exam paths.")
+    
+    if len(sub_list) == 0:
+        print("ℹ️ No subscribers to process. Ending task.")
+        exit(0)
+
     packs = {}
     for exam in needed_exams:
+        print(f"🧠 Requesting {exam} questions from Gemini...")
         pack = get_question_pack(exam)
         if pack:
             packs[exam] = pack
             
-    # Send personalized emails
     for u in sub_list:
         exam = u.get('examType', 'AZ-900')
         if exam in packs:
@@ -157,3 +157,5 @@ if __name__ == "__main__":
                     'streak': u.get('streak', 0) + 1,
                     'lastDelivery': datetime.now(timezone.utc)
                 })
+    
+    print("✅ Dispatch process completed.")
