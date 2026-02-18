@@ -17,7 +17,7 @@ SENDER_EMAIL = os.getenv("EMAIL_SENDER")
 SENDER_PASSWORD = os.getenv("EMAIL_PASSWORD")
 APP_ID = "cloud-devops-bot"
 
-# Using a standard stable model name to avoid 404 errors in public API calls
+# Using the stable 1.5 Flash model
 MODEL_NAME = "gemini-1.5-flash"
 
 # Firebase Initialization
@@ -37,8 +37,8 @@ def get_question_pack(exam):
     """
     Fetches a pack of 5 questions from Gemini with exponential backoff for 429/500 errors.
     """
-    # Using v1beta for better compatibility with structured output/JSON mode
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
+    # Using the stable v1 API endpoint to avoid 404 errors found in some beta regions
+    url = f"https://generativelanguage.googleapis.com/v1/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
     
     prompt = (
         f"Generate exactly 5 multiple-choice questions for the {exam} certification. "
@@ -68,7 +68,15 @@ def get_question_pack(exam):
                     return text_content
             
             elif res.status_code == 404:
-                print(f"❌ Error 404: Model '{MODEL_NAME}' not found. Please check the model name.")
+                # If v1 fails, try v1beta as a fallback before giving up
+                print(f"⚠️ Model '{MODEL_NAME}' not found on v1, trying v1beta...")
+                beta_url = url.replace("/v1/", "/v1beta/")
+                res = requests.post(beta_url, json=payload, timeout=30)
+                if res.status_code == 200:
+                    data = res.json()
+                    text_content = data['candidates'][0]['content']['parts'][0]['text']
+                    return text_content
+                print(f"❌ Error 404: Model not found on either endpoint.")
                 return None
                 
             elif res.status_code == 429:
@@ -78,7 +86,7 @@ def get_question_pack(exam):
                 
             else:
                 wait_time = 2 ** (i + 1)
-                print(f"⚠️ Gemini API error {res.status_code}. Details: {res.text}. Retrying in {wait_time}s...")
+                print(f"⚠️ Gemini API error {res.status_code}. Retrying in {wait_time}s...")
                 time.sleep(wait_time)
                 
         except Exception as e:
@@ -93,9 +101,16 @@ def send_email(user_data, questions_json):
         return False
         
     try:
-        q_list = json.loads(questions_json)
-    except Exception:
-        print(f"❌ Failed to parse JSON for {user_data['email']}")
+        # Strip potential markdown formatting if Gemini includes it
+        clean_json = questions_json.strip()
+        if clean_json.startswith("```json"):
+            clean_json = clean_json.split("```json")[1].split("```")[0].strip()
+        elif clean_json.startswith("```"):
+            clean_json = clean_json.split("```")[1].split("```")[0].strip()
+            
+        q_list = json.loads(clean_json)
+    except Exception as e:
+        print(f"❌ Failed to parse JSON for {user_data['email']}: {e}")
         return False
 
     streak = user_data.get('streak', 0) + 1
@@ -148,7 +163,6 @@ def send_email(user_data, questions_json):
 if __name__ == "__main__":
     print(f"🚀 Starting daily dispatch at {datetime.now(timezone.utc)}")
     
-    # Using .document() and FieldFilter to resolve the Positional Argument UserWarning
     sub_ref = db.collection('artifacts').document(APP_ID).collection('public').document('data').collection('subscribers')
     subs = sub_ref.where(filter=FieldFilter('status', '==', 'active')).stream()
     
