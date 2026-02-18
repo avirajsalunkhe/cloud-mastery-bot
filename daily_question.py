@@ -32,19 +32,20 @@ db = firestore.client()
 
 def get_question_pack(exam):
     """
-    Fetches a pack of 5 questions from Gemini with an aggressive fallback system.
-    Handles 400 (Invalid Field), 404 (Model Not Found) and 429 (Rate Limit).
+    Fetches a pack of 5 questions from Gemini with an aggressive fallback ladder.
+    Handles 400 (Invalid Field), 404 (Model Not Found), 429 (Rate Limit), and Safety Blocks.
     """
     if not GEMINI_API_KEY:
         print("❌ GEMINI_API_KEY is missing.")
         return None
 
-    # Strategies prioritized by stability and feature support
+    # Strategies prioritized by the most stable and modern models available
     strategies = [
-        ("v1beta", "gemini-1.5-flash", True),   # Modern JSON mode
-        ("v1", "gemini-1.5-flash", False),      # Stable standard
-        ("v1", "gemini-1.5-flash-latest", False), # Alias standard
-        ("v1beta", "gemini-pro", False),        # Legacy fallback
+        ("v1beta", "gemini-2.0-flash", True),   # Best Performance
+        ("v1beta", "gemini-1.5-flash", True),   # Standard Modern
+        ("v1", "gemini-1.5-flash", False),      # Standard Stable
+        ("v1beta", "gemini-1.5-flash-8b", True),# Fast Fallback
+        ("v1beta", "gemini-1.0-pro", False),    # Legacy Fallback
     ]
     
     prompt = (
@@ -55,7 +56,7 @@ def get_question_pack(exam):
         "IMPORTANT: Output ONLY the raw JSON array. No markdown code blocks, no preamble."
     )
     
-    # Base payload with Safety Settings to prevent 400s due to content filtering
+    # Base payload with Safety Settings set to BLOCK_NONE to ensure technical questions pass
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "safetySettings": [
@@ -65,7 +66,7 @@ def get_question_pack(exam):
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
         ],
         "generationConfig": {
-            "temperature": 0.85
+            "temperature": 0.8
         }
     }
 
@@ -83,25 +84,28 @@ def get_question_pack(exam):
                 
                 if res.status_code == 200:
                     data = res.json()
-                    if 'candidates' in data and data['candidates']:
-                        text_content = data['candidates'][0]['content']['parts'][0]['text']
-                        print(f"✅ Generated {exam} pack using {model} ({api_version}, json_mode={use_json_mode})")
+                    candidates = data.get('candidates', [])
+                    
+                    if candidates and 'content' in candidates[0]:
+                        text_content = candidates[0]['content']['parts'][0]['text']
+                        print(f"✅ Generated {exam} pack using {model} ({api_version})")
                         return text_content
                     else:
-                        print(f"⚠️ Empty response from {model}. Safety filters might be blocking.")
-                        break # Try next strategy
+                        # Check why it failed (usually Safety)
+                        reason = candidates[0].get('finishReason', 'UNKNOWN') if candidates else 'EMPTY'
+                        print(f"⚠️ Strategy {model} failed with reason: {reason}. Trying next strategy...")
+                        break 
                 
                 elif res.status_code == 400:
-                    err_json = res.json()
-                    msg = err_json.get('error', {}).get('message', '')
-                    if "responseMimeType" in msg or "response_mime_type" in msg:
-                        # Fallback to non-JSON mode within this strategy is handled by the next iteration of the strategy list
+                    err_msg = res.json().get('error', {}).get('message', '')
+                    if "responseMimeType" in err_msg:
+                        # Model doesn't support JSON mode, break to try next non-JSON strategy
                         break 
-                    print(f"⚠️ API 400 on {model}: {msg[:100]}")
+                    print(f"⚠️ API 400 on {model}: {err_msg[:100]}")
                     break
                 
                 elif res.status_code == 404:
-                    # Model not found on this endpoint
+                    # Model not available in this region/endpoint
                     break
                     
                 elif res.status_code == 429:
@@ -110,8 +114,8 @@ def get_question_pack(exam):
                     time.sleep(wait)
                     
                 else:
-                    print(f"⚠️ Error {res.status_code} on {model}. Retrying...")
-                    time.sleep(2)
+                    print(f"⚠️ Error {res.status_code} on {model}. Attempting strategy fallback...")
+                    break
                     
             except Exception as e:
                 print(f"⚠️ Connection Error: {e}")
@@ -131,8 +135,8 @@ def send_email(user_data, questions_json):
         elif "```" in clean_json:
             clean_json = clean_json.split("```")[1].split("```")[0].strip()
             
-        # Remove potential preamble text if it exists outside code blocks
-        if not clean_json.startswith('['):
+        # Ensure we find the array start/end
+        if not (clean_json.startswith('[') and clean_json.endswith(']')):
             start_idx = clean_json.find('[')
             end_idx = clean_json.rfind(']') + 1
             if start_idx != -1 and end_idx != -1:
@@ -198,6 +202,7 @@ def send_email(user_data, questions_json):
 if __name__ == "__main__":
     print(f"🚀 Starting daily dispatch at {datetime.now(timezone.utc)}")
     
+    # Path for subscribers
     sub_ref = db.collection('artifacts').document(APP_ID).collection('public').document('data').collection('subscribers')
     subs = sub_ref.where(filter=FieldFilter('status', '==', 'active')).stream()
     
