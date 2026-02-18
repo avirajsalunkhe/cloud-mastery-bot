@@ -37,8 +37,9 @@ def get_question_pack(exam):
     """
     Fetches a pack of 5 questions from Gemini with exponential backoff for 429/500 errors.
     """
-    # Switching to v1beta as it has more stable support for responseMimeType
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
+    # Standard endpoint for Google AI Studio
+    base_url = "https://generativelanguage.googleapis.com/v1beta/models/"
+    url = f"{base_url}{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
     
     prompt = (
         f"Generate exactly 5 multiple-choice questions for the {exam} certification. "
@@ -51,7 +52,7 @@ def get_question_pack(exam):
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "responseMimeType": "application/json",
-            "temperature": 0.7
+            "temperature": 0.8
         }
     }
 
@@ -68,15 +69,12 @@ def get_question_pack(exam):
                     return text_content
             
             elif res.status_code == 404:
-                print(f"⚠️ Model '{MODEL_NAME}' not found on v1beta, trying stable v1...")
-                stable_url = url.replace("/v1beta/", "/v1/")
-                res = requests.post(stable_url, json=payload, timeout=30)
-                if res.status_code == 200:
-                    data = res.json()
-                    text_content = data['candidates'][0]['content']['parts'][0]['text']
-                    return text_content
-                print(f"❌ Error 404: Model not found on either endpoint.")
-                return None
+                # Fallback to a different model version if the specific one isn't found
+                fallback_models = ["gemini-1.5-flash-latest", "gemini-pro"]
+                current_fallback = fallback_models[i % len(fallback_models)]
+                print(f"⚠️ Model '{MODEL_NAME}' not found. Trying fallback: {current_fallback}...")
+                url = f"{base_url}{current_fallback}:generateContent?key={GEMINI_API_KEY}"
+                continue
                 
             elif res.status_code == 429:
                 wait_time = 2 ** (i + 1)
@@ -86,7 +84,6 @@ def get_question_pack(exam):
             else:
                 wait_time = 2 ** (i + 1)
                 print(f"⚠️ Gemini API error {res.status_code}. Retrying in {wait_time}s...")
-                # Added detailed error logging to help identify why 400 errors occur
                 print(f"Debug Info: {res.text}")
                 time.sleep(wait_time)
                 
@@ -125,22 +122,26 @@ def send_email(user_data, questions_json):
         q_html += f"""
         <div style='margin-bottom:25px; border-left:4px solid {colors[i]}; padding-left:15px;'>
             <div style="font-size:10px; color:{colors[i]}; font-weight:bold; text-transform:uppercase;">Level {i+1}</div>
-            <b style="font-size:16px; color:#1e293b;">{q['question']}</b><br>
+            <b style="font-size:16px; color:#1e293b; display:block; margin-bottom:5px;">{q['question']}</b>
             <div style="margin-top:8px; color:#64748b; font-size:13px;">Topic: {q.get('topic', 'General')}</div>
         </div>"""
 
     body = f"""
     <div style="font-family: sans-serif; padding:20px; background:#f1f5f9;">
-        <div style="max-width:600px; margin:auto; background:white; border-radius:24px; padding:40px; border:1px solid #e2e8f0;">
+        <div style="max-width:600px; margin:auto; background:white; border-radius:24px; padding:40px; border:1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
             <div style="text-align:center; margin-bottom:30px;">
-                <h1 style="color:#2563eb; margin:0;">Cloud Mastery Bot</h1>
-                <div style="display:inline-block; margin-top:10px; background:#dbeafe; color:#1e40af; padding:5px 15px; border-radius:20px; font-weight:bold; font-size:12px;">
+                <h1 style="color:#2563eb; margin:0; font-size:28px;">Cloud Mastery Bot</h1>
+                <div style="display:inline-block; margin-top:15px; background:#dbeafe; color:#1e40af; padding:6px 16px; border-radius:20px; font-weight:bold; font-size:12px; letter-spacing:0.5px;">
                     🔥 {streak} DAY STREAK
                 </div>
             </div>
+            <p style="color:#475569; font-size:15px; line-height:1.6; text-align:center; margin-bottom:30px;">
+                Here is your daily <b>{exam}</b> question pack. Challenge yourself to maintain your streak!
+            </p>
             {q_html}
-            <div style="margin-top:30px; text-align:center;">
-                <a href="{manage_url}" style="display:inline-block; background:#1e293b; color:white; padding:12px 25px; border-radius:10px; text-decoration:none; font-weight:bold; font-size:13px;">Manage Subscription</a>
+            <div style="margin-top:40px; border-top:1px solid #f1f5f9; padding-top:25px; text-align:center;">
+                <a href="{manage_url}" style="display:inline-block; background:#1e293b; color:white; padding:14px 30px; border-radius:12px; text-decoration:none; font-weight:bold; font-size:14px; transition: background 0.2s;">Manage Subscription</a>
+                <p style="margin-top:20px; color:#94a3b8; font-size:11px;">You are receiving this because you subscribed to {exam} daily questions.</p>
             </div>
         </div>
     </div>"""
