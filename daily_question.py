@@ -37,20 +37,19 @@ db = firestore.client()
 def get_question_pack(exam):
     """
     Fetches a pack of 5 questions from Gemini. 
-    Implements an exhaustive multi-strategy fallback to resolve 404 (Not Found) errors.
+    Implements a robust fallback and aggressive rate-limit cooling.
     """
     if not GEMINI_API_KEY:
         print("❌ GEMINI_API_KEY is missing.")
         return None
 
-    # Comprehensive list of model identifiers to solve the persistent 404 issue.
-    # gemini-1.5-flash-8b is prioritized as it often has higher RPM on free tier.
+    # Reordered strategies based on your successful logs.
+    # gemini-2.0-flash was the only one that didn't return 404.
     strategies = [
-        ("v1beta", "gemini-1.5-flash-8b", True),
+        ("v1beta", "gemini-2.0-flash", True),
         ("v1beta", "gemini-1.5-flash", True),
         ("v1", "gemini-1.5-flash", False),
-        ("v1beta", "gemini-2.0-flash-exp", True),
-        ("v1beta", "gemini-2.0-flash", True),
+        ("v1beta", "gemini-1.5-flash-8b", True),
         ("v1beta", "gemini-1.5-pro", True),
     ]
     
@@ -64,36 +63,45 @@ def get_question_pack(exam):
     
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.8}
+        "safetySettings": [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}
+        ],
+        "generationConfig": {
+            "temperature": 0.8,
+            "topP": 0.95,
+            "topK": 40
+        }
     }
 
     for api_version, model, use_json_mode in strategies:
         url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model}:generateContent?key={GEMINI_API_KEY}"
         current_payload = json.loads(json.dumps(payload))
         
-        # Some older models or v1 endpoints don't support responseMimeType
         if use_json_mode:
             current_payload["generationConfig"]["responseMimeType"] = "application/json"
         
         print(f"  Trying {model} via {api_version}...")
         
-        # Retries for 429 errors
+        # Increased retries and wait times for 429 errors
         for retry in range(3): 
             try:
-                res = requests.post(url, json=current_payload, timeout=45)
+                res = requests.post(url, json=current_payload, timeout=60)
                 
                 if res.status_code == 200:
                     data = res.json()
-                    if 'candidates' in data and data['candidates']:
+                    if 'candidates' in data and data['candidates'] and 'content' in data['candidates'][0]:
                         return data['candidates'][0]['content']['parts'][0]['text']
-                    print("    ⚠️ API returned 200 but no candidates found (Safety block?).")
+                    print("    ⚠️ API returned 200 but no valid content (Check safety filters).")
                     break 
                 
                 elif res.status_code == 429:
-                    # Exponential backoff for rate limits: 20s, 40s, 60s
-                    wait_time = (retry + 1) * 20
+                    # Exponential backoff for free-tier rate limits: 30s, 60s, 90s
+                    wait_time = (retry + 1) * 30
                     if retry == 2:
-                        print(f"    🛑 Quota exhausted for {model}.")
+                        print(f"    🛑 Quota exhausted for {model} after multiple cooling attempts.")
                         break
                     print(f"    ⚠️ 429 Rate Limit. Cooling down for {wait_time}s...")
                     time.sleep(wait_time)
@@ -101,7 +109,7 @@ def get_question_pack(exam):
                 elif res.status_code == 400:
                     reason = res.json().get('error', {}).get('message', 'Unknown 400 Error')
                     if "responseMimeType" in reason:
-                        print(f"    ⚠️ 400: Model doesn't support JSON mode. Retrying without it...")
+                        print(f"    ⚠️ 400: JSON mode not supported. Retrying without it...")
                         current_payload["generationConfig"].pop("responseMimeType", None)
                         continue 
                     print(f"    ⚠️ 400 Bad Request: {reason}")
@@ -119,7 +127,7 @@ def get_question_pack(exam):
                 print(f"    ⚠️ Connection error: {e}")
                 break
         
-        # Buffer between models to avoid triggering rapid-fire rate limits
+        # Buffer between model strategies to prevent cumulative rate limit triggers
         time.sleep(5)
                 
     return None
@@ -220,7 +228,7 @@ if __name__ == "__main__":
             packs[exam] = pack
             print(f"  ✅ {exam} pack cached successfully.")
         else:
-            print(f"  ❌ All strategies failed for {exam}. (Check logs for 404 vs 429 details)")
+            print(f"  ❌ All strategies failed for {exam}. (Check log for 404 vs 429 specifics)")
 
     # Delivery Phase
     successful_sends = 0
