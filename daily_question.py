@@ -13,6 +13,7 @@ from email.mime.multipart import MIMEMultipart
 # --- Configuration ---
 DASHBOARD_URL = "https://avirajsalunkhe.github.io/cloud-mastery-bot" 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY") # Add this to your GitHub Secrets!
 SENDER_EMAIL = os.getenv("EMAIL_SENDER")
 SENDER_PASSWORD = os.getenv("EMAIL_PASSWORD")
 APP_ID = "cloud-devops-bot"
@@ -30,99 +31,127 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-def refill_question_bank(exam):
-    """
-    Calls Gemini to generate a batch of 10 questions and stores them in Firestore.
-    This saves your API quota for the next 10 days.
-    """
-    print(f"🧠 Bank empty for {exam}. Requesting batch of 10 questions from Gemini...")
+def fetch_from_gemini(exam, prompt):
+    """Attempt to get questions from Gemini API."""
+    if not GEMINI_API_KEY: return None
     
-    # Expanded strategies to bypass 404s and 429s
     strategies = [
         ("v1beta", "gemini-2.0-flash", True),
         ("v1beta", "gemini-1.5-flash", True),
-        ("v1", "gemini-1.5-flash", False),
-        ("v1beta", "gemini-1.5-flash-8b", True),
     ]
+    
+    for api_version, model, use_json in strategies:
+        url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model}:generateContent?key={GEMINI_API_KEY}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.8}
+        }
+        if use_json:
+            payload["generationConfig"]["responseMimeType"] = "application/json"
+            
+        try:
+            res = requests.post(url, json=payload, timeout=30)
+            if res.status_code == 200:
+                data = res.json()
+                return data['candidates'][0]['content']['parts'][0]['text']
+            elif res.status_code == 429:
+                print(f"    ⚠️ Gemini {model} rate limited. Trying next...")
+        except:
+            pass
+    return None
 
+def fetch_from_groq(exam, prompt):
+    """Attempt to get questions from Groq API (Llama 3). Highly reliable free alternative."""
+    if not GROQ_API_KEY: 
+        print("    ℹ️ Groq API Key not found in secrets. Skipping fallback.")
+        return None
+    
+    print(f"    🚀 Attempting Groq Fallback (Llama-3)...")
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "system", "content": "You are a cloud certification expert. Output ONLY valid raw JSON."},
+            {"role": "user", "content": prompt}
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.7
+    }
+    
+    try:
+        res = requests.post(url, json=payload, headers=headers, timeout=30)
+        if res.status_code == 200:
+            data = res.json()
+            return data['choices'][0]['message']['content']
+        else:
+            print(f"    ⚠️ Groq failed with status {res.status_code}")
+    except Exception as e:
+        print(f"    ⚠️ Groq connection error: {e}")
+    return None
+
+def refill_question_bank(exam):
+    """
+    Calls Multiple AI Providers to refill the question bank.
+    If Gemini fails, it automatically falls back to Groq.
+    """
+    print(f"🧠 Bank empty for {exam}. Refilling...")
+    
     prompt = (
         f"Generate exactly 10 multiple-choice questions for the {exam} certification. "
         "Each question text MUST be extremely short (maximum 40 characters). "
         "Return a JSON array of 10 objects. Each object must have: "
         "'question', 'options' (array of 4), 'correctIndex' (0-3), 'explanation', and 'topic'. "
-        "IMPORTANT: Output ONLY the raw JSON array. No markdown code blocks."
+        "Output ONLY the JSON array."
     )
 
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.8}
-    }
-
-    for api_version, model, use_json_mode in strategies:
-        url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model}:generateContent?key={GEMINI_API_KEY}"
-        current_payload = json.loads(json.dumps(payload))
-        if use_json_mode:
-            current_payload["generationConfig"]["responseMimeType"] = "application/json"
+    # Try Gemini First
+    raw_response = fetch_from_gemini(exam, prompt)
+    
+    # Fallback to Groq if Gemini fails
+    if not raw_response:
+        raw_response = fetch_from_groq(exam, prompt)
         
-        # We try each model strategy twice with significant cooling for 429s
-        for attempt in range(2):
-            try:
-                res = requests.post(url, json=current_payload, timeout=60)
-                
-                if res.status_code == 200:
-                    data = res.json()
-                    text_content = data['candidates'][0]['content']['parts'][0]['text']
-                    
-                    # Parse the batch
-                    clean_json = text_content.strip()
-                    if "```json" in clean_json:
-                        clean_json = clean_json.split("```json")[1].split("```")[0].strip()
-                    elif "```" in clean_json:
-                        clean_json = clean_json.split("```")[1].split("```")[0].strip()
-                    
-                    questions = json.loads(clean_json)
-                    
-                    # Save to Firestore Bank
-                    bank_ref = db.collection('artifacts').document(APP_ID).collection('public').document('data').collection('question_bank')
-                    for q in questions:
-                        bank_ref.add({
-                            "examType": exam,
-                            "question_data": json.dumps([q]), 
-                            "used": False,
-                            "createdAt": datetime.now(timezone.utc)
-                        })
-                    print(f"✅ Successfully added 10 new questions to {exam} bank using {model}.")
-                    return True
-                
-                elif res.status_code == 429:
-                    # RPM limits on free tier often reset every 60 seconds.
-                    # We wait 70s to ensure the window is cleared.
-                    print(f"    ⚠️ Rate limit on {model}. Quota full. Cooling down for 70s...")
-                    time.sleep(70)
-                    continue # Retry this specific model once more after cooling
-                
-                elif res.status_code == 404:
-                    print(f"    ⚠️ Strategy {model} via {api_version} failed (404: Not Found).")
-                    break # Skip to next strategy immediately
-                
-                else:
-                    print(f"    ⚠️ Strategy {model} failed with code {res.status_code}")
-                    break
-                    
-            except Exception as e:
-                print(f"    ⚠️ Error in strategy {model}: {e}")
-                break
-            
-    return False
+    if not raw_response:
+        return False
+
+    try:
+        # Clean JSON
+        clean_json = raw_response.strip()
+        if "```json" in clean_json:
+            clean_json = clean_json.split("```json")[1].split("```")[0].strip()
+        elif "```" in clean_json:
+            clean_json = clean_json.split("```")[1].split("```")[0].strip()
+        
+        # Some providers return an object containing the array
+        data = json.loads(clean_json)
+        questions = data if isinstance(data, list) else data.get('questions', [])
+        
+        if not questions:
+            return False
+
+        # Save to Firestore Bank
+        bank_ref = db.collection('artifacts').document(APP_ID).collection('public').document('data').collection('question_bank')
+        for q in questions:
+            bank_ref.add({
+                "examType": exam,
+                "question_data": json.dumps([q]), 
+                "used": False,
+                "createdAt": datetime.now(timezone.utc)
+            })
+        print(f"✅ Successfully added {len(questions)} new questions to {exam} bank.")
+        return True
+    except Exception as e:
+        print(f"    ⚠️ Error parsing AI response: {e}")
+        return False
 
 def get_question_from_bank(exam):
-    """
-    Checks the database for an unused question. 
-    If none exist, it triggers a refill.
-    """
+    """Checks the database for an unused question. Refills if empty."""
     bank_ref = db.collection('artifacts').document(APP_ID).collection('public').document('data').collection('question_bank')
     
-    # Check for an unused question
     query = bank_ref.where(filter=FieldFilter("examType", "==", exam)).where(filter=FieldFilter("used", "==", False)).limit(1).stream()
     
     found_doc = None
@@ -131,13 +160,10 @@ def get_question_from_bank(exam):
         break
         
     if found_doc:
-        # Mark as used immediately
         bank_ref.document(found_doc.id).update({"used": True, "usedAt": datetime.now(timezone.utc)})
         return found_doc.to_dict()["question_data"]
     
-    # If we reached here, bank is empty
     if refill_question_bank(exam):
-        # We need a small delay to allow Firestore indexes/consistency to catch up
         time.sleep(2)
         return get_question_from_bank(exam) 
         
@@ -149,8 +175,7 @@ def send_email(user_data, questions_json):
         
     try:
         q_list = json.loads(questions_json)
-    except Exception as e:
-        print(f"❌ JSON parsing failed: {e}")
+    except Exception:
         return False
 
     streak = user_data.get('streak', 0) + 1
@@ -218,9 +243,8 @@ if __name__ == "__main__":
     
     print(f"👥 Subscribers Found: {len(sub_list)}")
 
-    # Fetching/Generating logic
     packs = {}
-    for exam in needed_exams:
+    for exam in list(needed_exams):
         print(f"📦 Checking Question Bank for {exam}...")
         pack = get_question_from_bank(exam)
         if pack:
@@ -228,7 +252,6 @@ if __name__ == "__main__":
         else:
             print(f"❌ Could not retrieve or generate questions for {exam}.")
 
-    # Delivery Phase
     successful_sends = 0
     for u in sub_list:
         exam = u.get('examType', 'AZ-900')
