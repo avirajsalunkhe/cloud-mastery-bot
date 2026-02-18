@@ -39,14 +39,14 @@ def get_question_pack(exam):
         print("❌ GEMINI_API_KEY is missing.")
         return None
 
-    # Comprehensive strategy list. 
-    # Using '-latest' aliases often resolves 404 errors on specific keys.
+    # Strategies prioritized by likelihood of availability and quota.
+    # gemini-1.5-flash-8b is the best for high-frequency free tier usage.
     strategies = [
-        ("v1beta", "gemini-1.5-flash-latest", True),
+        ("v1beta", "gemini-1.5-flash-8b", True),
+        ("v1beta", "gemini-1.5-flash", True),
         ("v1beta", "gemini-2.0-flash", True),
         ("v1", "gemini-1.5-flash", False),
-        ("v1beta", "gemini-1.5-flash", True),
-        ("v1beta", "gemini-1.5-pro-latest", True),
+        ("v1beta", "gemini-pro", False),
     ]
     
     prompt = (
@@ -92,11 +92,10 @@ def get_question_pack(exam):
                     break 
                 
                 elif res.status_code == 429:
-                    # Free tier quotas often reset every 60 seconds.
-                    # We wait long enough for a full reset.
-                    wait_time = 65 
+                    # Free tier quotas reset strictly. We wait 70s to ensure the window clears.
+                    wait_time = 70 
                     if retry == 2:
-                        print(f"    🛑 Quota still exhausted for {model} after long cooling.")
+                        print(f"    🛑 Quota exhausted for {model}. Moving to next strategy.")
                         break
                     print(f"    ⚠️ 429 Rate Limit. Waiting {wait_time}s for quota reset...")
                     time.sleep(wait_time)
@@ -122,7 +121,7 @@ def get_question_pack(exam):
                 print(f"    ⚠️ Connection error: {e}")
                 break
         
-        # Buffer between model strategies
+        # Small buffer between model strategies
         time.sleep(5)
                 
     return None
