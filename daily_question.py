@@ -16,7 +16,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 SENDER_EMAIL = os.getenv("EMAIL_SENDER")
 SENDER_PASSWORD = os.getenv("EMAIL_PASSWORD")
 APP_ID = "cloud-devops-bot"
-MODEL_NAME = "gemini-2.5-flash-preview-09-2025"
+
+# Using a standard stable model name to avoid 404 errors in public API calls
+MODEL_NAME = "gemini-1.5-flash"
 
 # Firebase Initialization
 service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
@@ -35,6 +37,7 @@ def get_question_pack(exam):
     """
     Fetches a pack of 5 questions from Gemini with exponential backoff for 429/500 errors.
     """
+    # Using v1beta for better compatibility with structured output/JSON mode
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
     
     prompt = (
@@ -52,24 +55,36 @@ def get_question_pack(exam):
         }
     }
 
-    # Exponential backoff: 1s, 2s, 4s, 8s, 16s
+    # Exponential backoff: 2s, 4s, 8s, 16s, 32s
     for i in range(5):
         try:
             res = requests.post(url, json=payload, timeout=30)
+            
             if res.status_code == 200:
                 data = res.json()
                 if 'candidates' in data and data['candidates']:
                     text_content = data['candidates'][0]['content']['parts'][0]['text']
                     print(f"✅ Successfully generated question pack for {exam}")
                     return text_content
+            
+            elif res.status_code == 404:
+                print(f"❌ Error 404: Model '{MODEL_NAME}' not found. Please check the model name.")
+                return None
+                
             elif res.status_code == 429:
-                print(f"⚠️ Gemini API rate limited (429). Retrying in {2**i}s...")
+                wait_time = 2 ** (i + 1)
+                print(f"⚠️ Gemini API rate limited (429). Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                
             else:
-                print(f"⚠️ Gemini API error {res.status_code}. Retrying in {2**i}s...")
+                wait_time = 2 ** (i + 1)
+                print(f"⚠️ Gemini API error {res.status_code}. Details: {res.text}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                
         except Exception as e:
-            print(f"⚠️ Request Error: {e}. Retrying...")
-        
-        time.sleep(2**i)
+            wait_time = 2 ** (i + 1)
+            print(f"⚠️ Request Error: {e}. Retrying in {wait_time}s...")
+            time.sleep(wait_time)
         
     return None
 
@@ -80,6 +95,7 @@ def send_email(user_data, questions_json):
     try:
         q_list = json.loads(questions_json)
     except Exception:
+        print(f"❌ Failed to parse JSON for {user_data['email']}")
         return False
 
     streak = user_data.get('streak', 0) + 1
