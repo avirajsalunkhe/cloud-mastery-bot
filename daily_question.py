@@ -37,8 +37,8 @@ def get_question_pack(exam):
     """
     Fetches a pack of 5 questions from Gemini with exponential backoff for 429/500 errors.
     """
-    # Using the stable v1 API endpoint to avoid 404 errors found in some beta regions
-    url = f"https://generativelanguage.googleapis.com/v1/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
+    # Switching to v1beta as it has more stable support for responseMimeType
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={GEMINI_API_KEY}"
     
     prompt = (
         f"Generate exactly 5 multiple-choice questions for the {exam} certification. "
@@ -68,10 +68,9 @@ def get_question_pack(exam):
                     return text_content
             
             elif res.status_code == 404:
-                # If v1 fails, try v1beta as a fallback before giving up
-                print(f"⚠️ Model '{MODEL_NAME}' not found on v1, trying v1beta...")
-                beta_url = url.replace("/v1/", "/v1beta/")
-                res = requests.post(beta_url, json=payload, timeout=30)
+                print(f"⚠️ Model '{MODEL_NAME}' not found on v1beta, trying stable v1...")
+                stable_url = url.replace("/v1beta/", "/v1/")
+                res = requests.post(stable_url, json=payload, timeout=30)
                 if res.status_code == 200:
                     data = res.json()
                     text_content = data['candidates'][0]['content']['parts'][0]['text']
@@ -87,6 +86,8 @@ def get_question_pack(exam):
             else:
                 wait_time = 2 ** (i + 1)
                 print(f"⚠️ Gemini API error {res.status_code}. Retrying in {wait_time}s...")
+                # Added detailed error logging to help identify why 400 errors occur
+                print(f"Debug Info: {res.text}")
                 time.sleep(wait_time)
                 
         except Exception as e:
