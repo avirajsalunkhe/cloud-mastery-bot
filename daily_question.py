@@ -37,16 +37,18 @@ db = firestore.client()
 def get_question_pack(exam):
     """
     Fetches a pack of 5 questions from Gemini. 
-    If a 429 (Rate Limit) is hit and persists, raises GeminiRateLimitError 
-    to signal the main loop to stop and deliver what it has.
+    Implements a multi-strategy fallback to handle 400, 404, and 429 errors.
     """
     if not GEMINI_API_KEY:
         print("❌ GEMINI_API_KEY is missing.")
         return None
 
+    # Strategies prioritized by success probability
     strategies = [
         ("v1beta", "gemini-1.5-flash", True),
+        ("v1beta", "gemini-1.5-flash", False),
         ("v1", "gemini-1.5-flash", False),
+        ("v1beta", "gemini-pro", False),
     ]
     
     prompt = (
@@ -68,7 +70,9 @@ def get_question_pack(exam):
         if use_json_mode:
             current_payload["generationConfig"]["responseMimeType"] = "application/json"
         
-        for retry in range(2): # Minimal retries to check if it's a fluke or a hard limit
+        print(f"  Trying {model} via {api_version} (JSON Mode: {use_json_mode})...")
+        
+        for retry in range(2): 
             try:
                 res = requests.post(url, json=current_payload, timeout=45)
                 
@@ -76,24 +80,34 @@ def get_question_pack(exam):
                     data = res.json()
                     if 'candidates' in data and data['candidates']:
                         return data['candidates'][0]['content']['parts'][0]['text']
+                    print("    ⚠️ API returned 200 but no candidates found.")
                     break 
                 
                 elif res.status_code == 429:
-                    if retry == 1: # On the second 429, we assume the quota for the minute is dead
-                        print(f"🛑 Hard Rate Limit hit on {model}. Stopping generation phase.")
+                    if retry == 1:
+                        print(f"    🛑 Hard Rate Limit hit on {model}.")
                         raise GeminiRateLimitError("Minute quota exhausted")
-                    print(f"⚠️ 429 on {model}. Brief wait...")
-                    time.sleep(5)
+                    print(f"    ⚠️ 429 Rate Limit. Retrying in 10s...")
+                    time.sleep(10)
                 
                 elif res.status_code == 400:
-                    break # Usually a parameter error, try next strategy
+                    # Often means responseMimeType is not supported or safety filters triggered
+                    reason = res.json().get('error', {}).get('message', 'Unknown 400 Error')
+                    print(f"    ⚠️ 400 Bad Request: {reason}")
+                    break 
+                
+                elif res.status_code == 404:
+                    print(f"    ⚠️ 404 Model Not Found.")
+                    break
                 
                 else:
-                    break # Other errors, try next strategy
+                    print(f"    ⚠️ API Error {res.status_code}: {res.text[:100]}")
+                    break 
                     
             except GeminiRateLimitError:
                 raise
-            except Exception:
+            except Exception as e:
+                print(f"    ⚠️ Connection error: {e}")
                 break
                 
     return None
@@ -103,20 +117,22 @@ def send_email(user_data, questions_json):
         return False
         
     try:
+        # Aggressive cleaning of the string to ensure valid JSON
         clean_json = questions_json.strip()
         if "```json" in clean_json:
             clean_json = clean_json.split("```json")[1].split("```")[0].strip()
         elif "```" in clean_json:
             clean_json = clean_json.split("```")[1].split("```")[0].strip()
             
-        if not (clean_json.startswith('[') and clean_json.endswith(']')):
-            start_idx = clean_json.find('[')
-            end_idx = clean_json.rfind(']') + 1
-            if start_idx != -1 and end_idx != -1:
-                clean_json = clean_json[start_idx:end_idx]
+        # Find the start and end of the JSON array
+        start_idx = clean_json.find('[')
+        end_idx = clean_json.rfind(']') + 1
+        if start_idx != -1 and end_idx != -1:
+            clean_json = clean_json[start_idx:end_idx]
             
         q_list = json.loads(clean_json)
-    except Exception:
+    except Exception as e:
+        print(f"❌ JSON parsing failed for {user_data['email']}: {e}")
         return False
 
     streak = user_data.get('streak', 0) + 1
@@ -144,10 +160,10 @@ def send_email(user_data, questions_json):
                 </div>
             </div>
             <p style="color:#475569; font-size:15px; line-height:1.6; text-align:center; margin-bottom:30px;">
-                Here is your daily <b>{exam}</b> question pack.
+                Here is your daily <b>{exam}</b> question pack. Challenge yourself to maintain your streak!
             </p>
             {q_html}
-            <div style="margin-top:40px; text-align:center;">
+            <div style="margin-top:40px; border-top:1px solid #f1f5f9; padding-top:25px; text-align:center;">
                 <a href="{manage_url}" style="display:inline-block; background:#1e293b; color:white; padding:14px 30px; border-radius:12px; text-decoration:none; font-weight:bold; font-size:14px;">Manage Subscription</a>
             </div>
         </div>
@@ -164,7 +180,8 @@ def send_email(user_data, questions_json):
             s.login(SENDER_EMAIL, SENDER_PASSWORD)
             s.sendmail(SENDER_EMAIL, email, msg.as_string())
         return True
-    except Exception:
+    except Exception as e:
+        print(f"❌ SMTP failed for {email}: {e}")
         return False
 
 if __name__ == "__main__":
@@ -181,18 +198,18 @@ if __name__ == "__main__":
         sub_list.append(u)
         needed_exams.add(u.get('examType', 'AZ-900'))
     
-    print(f"👥 Subscribers: {len(sub_list)}")
+    print(f"👥 Subscribers Found: {len(sub_list)}")
 
     packs = {}
     try:
         for exam in needed_exams:
-            print(f"🧠 Fetching {exam}...")
+            print(f"🧠 Fetching {exam} pack...")
             pack = get_question_pack(exam)
             if pack:
                 packs[exam] = pack
-                print(f"✅ {exam} pack cached.")
+                print(f"  ✅ {exam} pack cached successfully.")
             else:
-                print(f"❌ Failed to fetch {exam}.")
+                print(f"  ❌ All strategies failed for {exam}.")
     except GeminiRateLimitError:
         print("⚠️ Rate limit detected. Proceeding to mail successfully cached packs...")
 
@@ -201,6 +218,7 @@ if __name__ == "__main__":
     for u in sub_list:
         exam = u.get('examType', 'AZ-900')
         if exam in packs:
+            print(f"📧 Mailing {u['email']}...")
             if send_email(u, packs[exam]):
                 sub_ref.document(u['id']).update({
                     'streak': u.get('streak', 0) + 1,
