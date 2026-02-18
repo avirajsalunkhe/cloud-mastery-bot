@@ -1,1 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Mastery Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans">
+    <div id="root"></div>
 
+    <!-- Replace the script block below with the React code provided in the previous response, 
+         ensuring the __firebase_config is correctly injected as a constant -->
+    <script type="module">
+import React, { useState, useEffect } from 'react';
+import { 
+  Terminal, Mail, Github, CheckCircle, Users, Send, AlertCircle, Loader2,
+  Coffee, Heart, Database, Cpu, Shield, Globe, Zap, Cloud, Trash2, Flame, Award,
+  Search, UserMinus, Info
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, addDoc, onSnapshot, query, serverTimestamp, where, getDocs, doc, deleteDoc } from 'firebase/firestore';
+
+// --- Firebase Configuration ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'cloud-devops-bot';
+
+const EXAM_PATHS = [
+  { id: 'AZ-900', name: 'Azure Fundamentals', icon: Globe, color: 'text-blue-400', border: 'border-blue-500/20' },
+  { id: 'AI-900', name: 'Azure AI Fundamentals', icon: Cpu, color: 'text-purple-400', border: 'border-purple-500/20' },
+  { id: 'DP-900', name: 'Azure Data Fundamentals', icon: Database, color: 'text-emerald-400', border: 'border-emerald-500/20' },
+  { id: 'SC-900', name: 'Security Fundamentals', icon: Shield, color: 'text-red-400', border: 'border-red-500/20' },
+  { id: 'PL-900', name: 'Power Platform', icon: Zap, color: 'text-pink-400', border: 'border-pink-500/20' },
+  { id: 'MS-900', name: 'Microsoft 365', icon: Cloud, color: 'text-orange-400', border: 'border-orange-500/20' },
+];
+
+const App = () => {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [user, setUser] = useState(null);
+  const [emailInput, setEmailInput] = useState('');
+  const [lookupEmail, setLookupEmail] = useState('');
+  const [selectedExam, setSelectedExam] = useState('AZ-900');
+  const [isSubscribing, setIsSubscribing] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [stats, setStats] = useState({ total: 0, byExam: {} });
+  const [userSubs, setUserSubs] = useState([]);
+
+  // Auth initialization
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Auth error:", err);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
+
+  // Handle URL Deep Linking (e.g., from Unsubscribe Link in Email)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    const email = params.get('email');
+    
+    if (tab === 'manage') {
+      setActiveTab('manage');
+      if (email) {
+        setLookupEmail(email);
+        // We'll trigger the search in a separate effect once auth is ready
+      }
+    }
+  }, []);
+
+  // Global stats listener
+  useEffect(() => {
+    if (!user) return;
+    const q = collection(db, 'artifacts', appId, 'public', 'data', 'subscribers');
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const byExam = {};
+      snapshot.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        const type = data.examType || 'Unknown';
+        byExam[type] = (byExam[type] || 0) + 1;
+      });
+      setStats({ total: snapshot.size, byExam });
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // Auto-trigger search if email is provided via URL
+  useEffect(() => {
+    if (user && lookupEmail && activeTab === 'manage' && userSubs.length === 0 && !isSearching) {
+      performLookup(lookupEmail);
+    }
+  }, [user, lookupEmail, activeTab]);
+
+  const performLookup = async (targetEmail) => {
+    setIsSearching(true);
+    setUserSubs([]);
+    try {
+      const q = query(
+        collection(db, 'artifacts', appId, 'public', 'data', 'subscribers'),
+        where("email", "==", targetEmail.toLowerCase().trim())
+      );
+      const querySnapshot = await getDocs(q);
+      const subs = [];
+      querySnapshot.forEach((doc) => {
+        subs.push({ id: doc.id, ...doc.data() });
+      });
+      setUserSubs(subs);
+      if (subs.length === 0) {
+        setMessage({ type: 'info', text: 'No active subscriptions found for this email.' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Failed to find data. Try again.' });
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSubscribe = async (e) => {
+    e.preventDefault();
+    if (!emailInput || !emailInput.includes('@')) {
+      setMessage({ type: 'error', text: 'Please enter a valid email address.' });
+      return;
+    }
+    setIsSubscribing(true);
+    setMessage(null);
+    try {
+      const subscribersCol = collection(db, 'artifacts', appId, 'public', 'data', 'subscribers');
+      await addDoc(subscribersCol, {
+        email: emailInput.toLowerCase().trim(),
+        examType: selectedExam,
+        subscribedAt: serverTimestamp(),
+        userId: user.uid,
+        status: 'active',
+        streak: 0,
+        plan: 'Free Learner',
+        lastDelivery: null
+      });
+      setMessage({ type: 'success', text: `Success! Check your inbox for 5 daily questions.` });
+      setEmailInput('');
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Subscription failed.' });
+    } finally {
+      setIsSubscribing(false);
+      setTimeout(() => setMessage(null), 5000);
+    }
+  };
+
+  const handleLookup = (e) => {
+    e.preventDefault();
+    performLookup(lookupEmail);
+  };
+
+  const handleUnsubscribe = async (subId) => {
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'subscribers', subId));
+      setUserSubs(prev => prev.filter(s => s.id !== subId));
+      setMessage({ type: 'success', text: 'Subscription successfully removed.' });
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Error removing data.' });
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-blue-500/30">
+      <div className="max-w-6xl mx-auto p-4 md:p-8">
+        <header className="flex flex-col md:flex-row items-start md:items-center justify-between mb-12 gap-6">
+          <div className="flex items-center gap-4">
+            <div className="bg-gradient-to-tr from-blue-600 to-blue-400 p-3 rounded-2xl shadow-xl shadow-blue-500/20">
+              <Terminal size={28} className="text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-black tracking-tight italic uppercase">Cloud Mastery <span className="text-blue-500 not-italic">Bot</span></h1>
+              <p className="text-slate-500 text-sm font-medium">Auto-Delivery • 5 Adaptive Questions • Self-Service Unsubscribe</p>
+            </div>
+          </div>
+          <div className="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800 shadow-inner">
+            <button onClick={() => setActiveTab('dashboard')} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Enroll</button>
+            <button onClick={() => setActiveTab('manage')} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'manage' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Manage</button>
+          </div>
+        </header>
+
+        {activeTab === 'dashboard' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div className="lg:col-span-8 space-y-8">
+              <section>
+                <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-4">Certification Track</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  {EXAM_PATHS.map((exam) => (
+                    <button key={exam.id} onClick={() => setSelectedExam(exam.id)} className={`relative p-5 rounded-2xl border-2 transition-all text-left overflow-hidden group ${selectedExam === exam.id ? `${exam.border} bg-slate-900 ring-4 ring-blue-500/5` : 'bg-slate-950 border-slate-800/50 hover:border-slate-700'}`}>
+                      <exam.icon className={`mb-3 ${exam.color} ${selectedExam === exam.id ? 'scale-110' : ''} transition-transform`} size={24} />
+                      <p className={`text-xs font-black mb-1 ${selectedExam === exam.id ? 'text-white' : 'text-slate-500'}`}>{exam.id}</p>
+                      <p className="text-[10px] text-slate-400 font-medium leading-tight">{exam.name}</p>
+                    </button>
+                  ))}
+                </div>
+              </section>
+              <section className="bg-slate-900/40 border border-slate-800 rounded-3xl p-8 shadow-xl">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="p-2 bg-blue-500/10 rounded-lg"><Mail className="text-blue-400" size={20} /></div>
+                  <h2 className="text-xl font-black italic">Activate 5 Daily Questions</h2>
+                </div>
+                <form onSubmit={handleSubscribe} className="flex flex-col sm:flex-row gap-4">
+                  <input type="email" required placeholder="Enter your email address..." value={emailInput} onChange={(e) => setEmailInput(e.target.value)} className="flex-1 bg-slate-950 border border-slate-700 rounded-xl py-4 px-6 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-medium" />
+                  <button type="submit" disabled={isSubscribing} className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 text-white px-8 py-4 rounded-xl font-black flex items-center justify-center gap-2 transition-all shadow-xl shadow-blue-500/20">{isSubscribing ? <Loader2 size={20} className="animate-spin" /> : <Zap size={20} />} Enroll</button>
+                </form>
+                {message && <div className="mt-6 p-4 rounded-xl flex items-center gap-3 text-sm font-bold bg-slate-950 border border-slate-800 animate-in slide-in-from-bottom-2"><CheckCircle size={18} className="text-emerald-400" /><span className="text-slate-300">{message.text}</span></div>}
+              </section>
+            </div>
+            <div className="lg:col-span-4 space-y-6">
+              <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-8 shadow-2xl relative overflow-hidden group">
+                <div className="relative z-10">
+                  <p className="text-blue-100 text-xs font-bold uppercase tracking-wider mb-2">Community</p>
+                  <h3 className="text-5xl font-black text-white">{stats.total}</h3>
+                  <p className="text-blue-200 text-[10px] mt-2 font-bold uppercase tracking-widest">Global Learners</p>
+                </div>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 relative overflow-hidden group">
+                <h3 className="font-black text-amber-500 flex items-center gap-2 mb-4 italic"><Heart size={18} fill="currentColor" /> Support Creator</h3>
+                <p className="text-xs text-slate-400 leading-relaxed mb-6 font-medium">Keep the bot running by supporting the creator with a coffee!</p>
+                <a href="https://buymeacoffee.com/avirajsalunkhe" target="_blank" className="w-full block text-center bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl text-xs transition-all shadow-lg shadow-amber-500/10">Buy me a coffee</a>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="max-w-3xl mx-auto space-y-8">
+            <div className="text-center mb-10">
+              <h2 className="text-3xl font-black italic mb-2">Subscription Manager</h2>
+              <p className="text-slate-500 text-sm font-medium">Enter your email to unsubscribe or track your streak.</p>
+            </div>
+            <section className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-xl">
+              <form onSubmit={handleLookup} className="flex flex-col sm:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600" size={18} />
+                  <input type="email" required placeholder="Verify your email address..." value={lookupEmail} onChange={(e) => setLookupEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl py-4 pl-12 pr-6 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all shadow-inner font-medium" />
+                </div>
+                <button type="submit" disabled={isSearching} className="bg-slate-800 hover:bg-slate-700 text-white px-8 py-4 rounded-xl font-black flex items-center justify-center gap-2 transition-all">{isSearching ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />} Find Records</button>
+              </form>
+              <div className="mt-10 space-y-4">
+                {userSubs.length > 0 ? userSubs.map(sub => (
+                  <div key={sub.id} className="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex items-center justify-between group animate-in fade-in slide-in-from-top-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 rounded-2xl bg-slate-900 flex items-center justify-center text-blue-400 border border-slate-800 shadow-lg"><Flame size={28} className={sub.streak > 0 ? "text-amber-500 fill-amber-500/20" : "text-slate-700"} /></div>
+                      <div>
+                        <h4 className="font-black text-lg">{sub.examType} Path</h4>
+                        <div className="flex gap-4 mt-1">
+                           <span className="flex items-center gap-1.5 text-[10px] font-black uppercase text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded">Streak: {sub.streak || 0} Days</span>
+                           <span className="flex items-center gap-1.5 text-[10px] font-black uppercase text-slate-400 bg-slate-800 px-2 py-0.5 rounded">{sub.plan || 'Free'}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button onClick={() => handleUnsubscribe(sub.id)} className="flex items-center gap-2 px-4 py-2 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all font-bold text-xs"><UserMinus size={16} /> Delete Data</button>
+                  </div>
+                )) : !isSearching && <div className="py-20 text-center border-2 border-dashed border-slate-800 rounded-3xl"><div className="p-4 bg-slate-900 inline-block rounded-full mb-4 text-slate-700"><Info size={32} /></div><p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Lookup to manage your streaks and data</p></div>}
+              </div>
+            </section>
+          </div>
+        )}
+        <footer className="mt-20 pt-10 border-t border-slate-900 flex flex-col md:flex-row items-center justify-between gap-6 text-slate-600 text-[10px] font-black uppercase tracking-tighter">
+          <p>© {new Date().getFullYear()} Cloud Mastery Bot • Built by Aviraj Salunkhe</p>
+          <a href="https://buymeacoffee.com/avirajsalunkhe" target="_blank" className="text-amber-500 hover:text-amber-400 flex items-center gap-1.5 transition-colors"><Coffee size={14} /> Buy me a coffee</a>
+        </footer>
+      </div>
+    </div>
+  );
+};
+
+export default App;
+</script>
+</body>
+</html>
