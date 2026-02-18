@@ -125,7 +125,8 @@ def send_email(user_data, questions_json):
 if __name__ == "__main__":
     print(f"🚀 Starting daily dispatch at {datetime.now(timezone.utc)}")
     
-    sub_ref = db.collection('artifacts').document(APP_ID).collection('public').doc('data').collection('subscribers')
+    # Corrected path using .document() instead of .doc() for the Python SDK
+    sub_ref = db.collection('artifacts').document(APP_ID).collection('public').document('data').collection('subscribers')
     subs = sub_ref.where('status', '==', 'active').stream()
     
     sub_list = []
