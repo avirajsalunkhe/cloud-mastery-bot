@@ -28,6 +28,13 @@
             height: 24px;
             display: inline-block;
         }
+        @keyframes spin-slow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin-slow {
+            animation: spin-slow 2s linear infinite;
+        }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen">
@@ -40,7 +47,10 @@
                 </div>
                 <div>
                     <h1 class="text-3xl font-black tracking-tight italic uppercase">Cloud Mastery <span class="text-blue-500 not-italic">Bot</span></h1>
-                    <p class="text-slate-500 text-sm font-medium">5 Questions Daily • Multi-Path Training • No Login Required</p>
+                    <div class="flex items-center gap-2 mt-1">
+                        <div id="connection-indicator" class="w-2 h-2 rounded-full bg-slate-600"></div>
+                        <p id="connection-status" class="text-slate-500 text-xs font-bold uppercase tracking-widest">Initializing...</p>
+                    </div>
                 </div>
             </div>
             
@@ -161,7 +171,7 @@
         try {
             firebaseConfig = JSON.parse(__firebase_config);
         } catch (e) {
-            console.error("Firebase config missing or invalid. Dashboard will operate in UI-only mode.");
+            console.error("Firebase config missing. Operating in local mode.");
         }
 
         const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'cloud-devops-bot';
@@ -181,6 +191,24 @@
         ];
 
         // --- 3. UI RENDERING ---
+        function setStatus(type, message) {
+            const indicator = document.getElementById('connection-indicator');
+            const statusText = document.getElementById('connection-status');
+            
+            statusText.innerText = message;
+            
+            if (type === 'success') {
+                indicator.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
+                statusText.className = "text-emerald-500 text-xs font-bold uppercase tracking-widest";
+            } else if (type === 'error') {
+                indicator.className = "w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]";
+                statusText.className = "text-red-500 text-xs font-bold uppercase tracking-widest";
+            } else {
+                indicator.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]";
+                statusText.className = "text-blue-400 text-xs font-bold uppercase tracking-widest";
+            }
+        }
+
         function renderExams() {
             const grid = document.getElementById('exam-grid');
             if (!grid) return;
@@ -193,9 +221,7 @@
                 </button>
             `).join('');
             
-            if (window.lucide) {
-                lucide.createIcons();
-            }
+            if (window.lucide) lucide.createIcons();
         }
 
         function selectExam(id) {
@@ -230,46 +256,64 @@
 
         // --- 4. INITIALIZATION ---
         const init = async () => {
-            // Render UI immediately so it's not a black/empty page
             renderExams();
 
-            if (!firebaseConfig.apiKey) return;
+            if (!firebaseConfig.apiKey) {
+                setStatus('error', 'Config Missing');
+                return;
+            }
 
-            firebase.initializeApp(firebaseConfig);
-            db = firebase.firestore();
-            auth = firebase.auth();
+            try {
+                setStatus('pending', 'Connecting...');
+                firebase.initializeApp(firebaseConfig);
+                db = firebase.firestore();
+                auth = firebase.auth();
 
-            // Rule 3: Auth before queries
-            const startAuth = async () => {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    try {
-                        await auth.signInWithCustomToken(__initial_auth_token);
-                    } catch (e) {
+                const startAuth = async () => {
+                    const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                    if (token) {
+                        try {
+                            await auth.signInWithCustomToken(token);
+                        } catch (e) {
+                            await auth.signInAnonymously();
+                        }
+                    } else {
                         await auth.signInAnonymously();
                     }
-                } else {
-                    await auth.signInAnonymously();
-                }
-            };
-            await startAuth();
+                };
 
-            auth.onAuthStateChanged(user => {
-                currentUser = user;
-                if (!user) return;
-                
-                // Stats listener
-                db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers')
-                    .onSnapshot(snap => {
-                        document.getElementById('global-count').innerText = snap.size;
-                    }, err => console.error("Firestore access denied. Check rules."));
-            });
+                await startAuth();
+
+                auth.onAuthStateChanged(user => {
+                    currentUser = user;
+                    if (user) {
+                        setStatus('success', 'Connected');
+                        db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers')
+                            .onSnapshot(snap => {
+                                document.getElementById('global-count').innerText = snap.size;
+                            }, err => {
+                                console.error(err);
+                                setStatus('error', 'DB Denied');
+                            });
+                    } else {
+                        setStatus('pending', 'Waiting for Auth...');
+                    }
+                });
+            } catch (err) {
+                console.error(err);
+                setStatus('error', 'Connection Failed');
+            }
         };
 
         // --- 5. EVENT LISTENERS ---
         document.getElementById('subscribe-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!currentUser) {
-                alert("Please wait for connection to stabilize...");
+                const msgBox = document.getElementById('subscribe-msg');
+                msgBox.classList.remove('hidden');
+                msgBox.className = "mt-6 p-4 rounded-xl flex items-center gap-3 text-sm font-bold bg-red-950/20 border border-red-800 text-red-400";
+                msgBox.querySelector('span').innerText = "Still connecting to database. Please wait a few seconds...";
+                setTimeout(() => msgBox.classList.add('hidden'), 3000);
                 return;
             }
 
@@ -292,10 +336,12 @@
                 });
 
                 msgBox.classList.remove('hidden');
+                msgBox.className = "mt-6 p-4 rounded-xl flex items-center gap-3 text-sm font-bold bg-slate-950 border border-slate-800";
                 msgBox.querySelector('span').innerText = `Success! Enrolled in ${selectedExam} track.`;
                 document.getElementById('email-input').value = '';
             } catch (err) {
-                alert("Action failed. Check console for permission errors.");
+                console.error(err);
+                alert("Subscription failed. Check your database rules.");
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = `<i data-lucide="zap" class="mr-2"></i> Enroll Path`;
@@ -362,10 +408,8 @@
             }
         }
 
-        // Run Init
         document.addEventListener('DOMContentLoaded', init);
 
-        // Handle URL Deep Link
         window.addEventListener('load', () => {
             const params = new URLSearchParams(window.location.search);
             if (params.get('tab') === 'manage') {
@@ -373,10 +417,12 @@
                 const email = params.get('email');
                 if (email) {
                     document.getElementById('lookup-email').value = email;
-                    // Auto search after a short delay for auth
-                    setTimeout(() => {
-                        if (currentUser) document.getElementById('lookup-form').dispatchEvent(new Event('submit'));
-                    }, 2000);
+                    const checkAuth = setInterval(() => {
+                        if (currentUser) {
+                            document.getElementById('lookup-form').dispatchEvent(new Event('submit'));
+                            clearInterval(checkAuth);
+                        }
+                    }, 1000);
                 }
             }
         });
