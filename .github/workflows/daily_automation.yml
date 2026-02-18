@@ -66,7 +66,7 @@ jobs:
           with open(file_path, 'r') as f:
               content = f.read()
               
-          config = os.environ.get('FIREBASE_CONFIG_DATA', '{}')
+          config = os.environ.get('FIREBASE_CONFIG_DATA', '{}').strip()
           
           # Replace the placeholder in index.html with the secret value
           placeholder = 'GITHUB_FIREBASE_CONFIG_PLACEHOLDER'
@@ -76,8 +76,18 @@ jobs:
                   f.write(new_content)
               print('Successfully injected Firebase Config into index.html')
           else:
-              print('Warning: Placeholder not found. Injection skipped.')
+              print('Warning: Placeholder not found. Your index.html might already be configured or is missing the GITHUB_FIREBASE_CONFIG_PLACEHOLDER string.')
           "
+
+      - name: Verify Injection Result (Debug)
+        run: |
+          # Checks if the placeholder still exists. If it does, the replacement failed.
+          if grep -q "GITHUB_FIREBASE_CONFIG_PLACEHOLDER" index.html; then
+            echo "CRITICAL ERROR: The placeholder was NOT replaced. Check your FIREBASE_CONFIG secret."
+            exit 1
+          else
+            echo "Verification Success: Config is present in index.html"
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
