@@ -2,7 +2,7 @@ name: Cloud Mastery Bot - Daily Dispatch & Deploy
 
 on:
   schedule:
-    - cron: '0 9 * * *' # Runs at 9:00 AM UTC daily
+    - cron: '30 11 * * *' # Runs at 9:00 AM UTC daily
   push:
     branches:
       - main        # Updates dashboard whenever you push code
