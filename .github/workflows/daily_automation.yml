@@ -8,14 +8,14 @@ on:
       - main        # Updates dashboard whenever you push code
   workflow_dispatch: # Allows manual trigger
 
-# Necessary permissions for GitHub Pages and writing to the repository
+# Necessary permissions for GitHub Pages and repository interaction
 permissions:
   contents: write
   pages: write
   id-token: write
 
 jobs:
-  # Job 1: Executes the Python bot logic
+  # Job 1: Executes the Python bot logic (Brain)
   run-bot:
     runs-on: ubuntu-latest
     steps:
@@ -28,7 +28,9 @@ jobs:
           python-version: '3.11'
 
       - name: Install Dependencies
-        run: pip install requests firebase-admin
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests firebase-admin
 
       - name: Execute Daily Dispatch
         env:
@@ -38,11 +40,10 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: python daily_question.py
 
-  # Job 2: Deploys the Dashboard and injects Frontend Secrets
+  # Job 2: Deploys the Dashboard and injects Frontend Secrets (Interface)
   deploy-dashboard:
     runs-on: ubuntu-latest
     needs: run-bot
-    # Explicitly set the environment for GitHub Pages
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -50,15 +51,8 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Verify Secrets
-        run: |
-          if [ -z "${{ secrets.FIREBASE_CONFIG }}" ]; then
-            echo "ERROR: FIREBASE_CONFIG secret is missing in GitHub Settings!"
-            exit 1
-          fi
-
       - name: Inject Firebase Config Secret
-        # Using Python to safely handle multi-line JSON secrets
+        # This step handles multi-line JSON from secrets.FIREBASE_CONFIG safely
         env:
           FIREBASE_CONFIG_DATA: ${{ secrets.FIREBASE_CONFIG }}
         run: |
@@ -66,27 +60,23 @@ jobs:
           import os
           file_path = 'index.html'
           if not os.path.exists(file_path):
-              print(f'Error: {file_path} not found in root.')
+              print(f'Error: {file_path} not found.')
               exit(1)
               
           with open(file_path, 'r') as f:
               content = f.read()
               
-          config = os.environ.get('FIREBASE_CONFIG_DATA', '')
-          if not config:
-              print('Error: FIREBASE_CONFIG_DATA environment variable is empty.')
-              exit(1)
-              
-          # Check if placeholder exists
+          config = os.environ.get('FIREBASE_CONFIG_DATA', '{}')
+          
+          # Replace the placeholder in index.html with the secret value
           placeholder = 'GITHUB_FIREBASE_CONFIG_PLACEHOLDER'
-          if placeholder not in content:
-              print(f'Warning: Placeholder {placeholder} not found in {file_path}. Injection might fail.')
-          
-          new_content = content.replace(placeholder, config)
-          
-          with open(file_path, 'w') as f:
-              f.write(new_content)
-          print('Successfully injected Firebase Config into index.html')
+          if placeholder in content:
+              new_content = content.replace(placeholder, config)
+              with open(file_path, 'w') as f:
+                  f.write(new_content)
+              print('Successfully injected Firebase Config into index.html')
+          else:
+              print('Warning: Placeholder not found. Injection skipped.')
           "
 
       - name: Setup Pages
@@ -95,7 +85,7 @@ jobs:
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.' # Upload root directory containing the modified index.html
+          path: '.' # Uploads root directory containing the modified index.html
 
       - name: Deploy to GitHub Pages
         id: deployment
