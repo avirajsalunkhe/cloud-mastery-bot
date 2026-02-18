@@ -12,9 +12,7 @@
         .active-tab { background-color: #2563eb; color: white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
         .hidden-tab { display: none !important; }
         .exam-card-selected { border-color: #3b82f6 !important; background-color: #0f172a !important; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1); }
-        [data-lucide] { width: 20px; height: 20px; }
-        /* Prevent layout shift while icons load */
-        .icon-placeholder { width: 20px; height: 20px; display: inline-block; }
+        [data-lucide] { width: 20px; height: 20px; display: inline-block; }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen">
@@ -29,7 +27,7 @@
                     <h1 class="text-3xl font-black italic uppercase tracking-tighter">Cloud Mastery <span class="text-blue-500 not-italic">Bot</span></h1>
                     <div class="flex items-center gap-2 mt-1">
                         <div id="status-dot" class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-                        <p id="status-text" class="text-slate-500 text-xs font-bold uppercase tracking-widest">Initializing Dashboard...</p>
+                        <p id="status-text" class="text-slate-500 text-xs font-bold uppercase tracking-widest">Initializing...</p>
                     </div>
                 </div>
             </div>
@@ -44,14 +42,15 @@
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 <div class="lg:col-span-8 space-y-8">
                     <section>
-                        <h3 class="text-sm font-black text-slate-500 uppercase tracking-widest mb-4">Certification Tracks</h3>
+                        <h3 class="text-sm font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                             Choose Your Certification Path
+                        </h3>
                         <div id="exam-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                            <!-- Injected by JS -->
-                            <div class="p-8 text-center col-span-full text-slate-600 italic">Loading tracks...</div>
+                            <!-- JS will inject tracks here -->
                         </div>
                     </section>
                     <section class="bg-slate-900/40 border border-slate-800 rounded-3xl p-8">
-                        <h2 id="subscribe-title" class="text-xl font-black italic mb-6">Activate 5 Daily AZ-900 Questions</h2>
+                        <h2 id="subscribe-title" class="text-xl font-black italic mb-6 text-slate-200">Activate Daily AZ-900 Questions</h2>
                         <form id="subscribe-form" class="flex flex-col sm:flex-row gap-4">
                             <input 
                                 id="email-input"
@@ -63,7 +62,7 @@
                             <button 
                                 type="submit" 
                                 id="btn-subscribe"
-                                class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-black transition-all"
+                                class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-black transition-all shadow-lg shadow-blue-600/20"
                             >
                                 Enroll Path
                             </button>
@@ -82,7 +81,7 @@
                             <i data-lucide="heart" class="w-4 h-4 fill-current"></i> Support Project
                         </h4>
                         <p class="text-[10px] text-slate-500 leading-relaxed mb-4 font-medium">Keep the daily questions free for everyone by supporting the development.</p>
-                        <a href="https://buymeacoffee.com/avirajsalunkhe" target="_blank" class="w-full block text-center bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl text-xs shadow-lg shadow-amber-500/10">Buy me a coffee</a>
+                        <a href="https://buymeacoffee.com/avirajsalunkhe" target="_blank" class="w-full block text-center bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl text-xs shadow-lg shadow-amber-500/10 transition-all">Buy me a coffee</a>
                     </div>
                 </div>
             </div>
@@ -127,7 +126,7 @@
         try {
             if (typeof __firebase_config !== 'undefined' && __firebase_config) {
                 firebaseConfig = JSON.parse(__firebase_config);
-            } else if (GITHUB_CONFIG_PLACEHOLDER !== 'GITHUB_FIREBASE_CONFIG_PLACEHOLDER') {
+            } else if (!GITHUB_CONFIG_PLACEHOLDER.includes('PLACEHOLDER')) {
                 firebaseConfig = JSON.parse(GITHUB_CONFIG_PLACEHOLDER);
             }
         } catch (e) {
@@ -155,7 +154,6 @@
             if (!dot || !statusText) return;
             
             statusText.innerText = text;
-            
             if (type === 'success') {
                 dot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
                 statusText.className = "text-emerald-500 text-xs font-bold uppercase tracking-widest";
@@ -204,23 +202,27 @@
                     <p class="text-[10px] text-slate-500 font-medium leading-tight">${exam.name.replace('Azure ', '')}</p>
                 </button>
             `).join('');
-            if (window.lucide) lucide.createIcons();
+            if (window.lucide) {
+                try { lucide.createIcons(); } catch(e) {}
+            }
         }
 
         function selectExam(examId) {
             selectedExam = examId;
             const title = document.getElementById('subscribe-title');
-            if (title) title.innerText = `Activate 5 Daily ${examId} Questions`;
+            if (title) title.innerText = `Activate Daily ${examId} Questions`;
             renderExamGrid();
         }
 
-        // --- 4. DATA FUNCTIONS ---
+        // --- 4. INITIALIZATION ---
         async function init() {
-            // ALWAYS render tracks first so UI is never empty
+            // Priority 1: Render tracks immediately so UI is never empty
             renderExamGrid();
             
+            // Priority 2: Check for config
             if (!firebaseConfig || !firebaseConfig.apiKey) {
                 setStatus('pending', 'Awaiting Action Secrets...');
+                // Tracks are already visible, app is just waiting for secrets injection
                 return;
             }
 
@@ -230,7 +232,7 @@
                 db = firebase.firestore(app);
                 auth = firebase.auth(app);
 
-                // Authentication (Anonymous is required for public repo security)
+                // Authentication
                 await auth.signInAnonymously();
                 
                 auth.onAuthStateChanged(user => {
@@ -255,7 +257,7 @@
                 if (countEl) countEl.innerText = snap.size;
             }, err => {
                 console.error(err);
-                setStatus('error', 'Database Path Blocked');
+                setStatus('error', 'Database Blocked');
             });
         }
 
@@ -263,7 +265,7 @@
         document.getElementById('subscribe-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!currentUser) {
-                alert("The connection hasn't been established yet. If you just deployed, wait 1 minute for GitHub to process the secrets.");
+                alert("The connection hasn't been established yet. Please wait for the 'Connection Secure' status.");
                 return;
             }
             
@@ -320,7 +322,7 @@
                     list.innerHTML = snap.docs.map(doc => {
                         const data = doc.data();
                         return `
-                            <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex justify-between items-center animate-in fade-in slide-in-from-bottom-2">
+                            <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex justify-between items-center">
                                 <div class="flex items-center gap-4">
                                     <div class="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-amber-500">
                                         <i data-lucide="flame" class="${data.streak > 0 ? 'fill-current' : ''}"></i>
@@ -342,7 +344,7 @@
                     if (window.lucide) lucide.createIcons();
                 }
             } catch (err) {
-                alert("Database lookup failed. Ensure rules allow read access.");
+                alert("Database lookup failed.");
             } finally {
                 btn.disabled = false;
                 btn.innerText = 'Search';
@@ -350,7 +352,7 @@
         });
 
         async function unsubscribe(docId) {
-            if (!confirm("Are you sure? This will permanently delete your streak and stop all daily questions.")) return;
+            if (!confirm("Are you sure? This will reset your streak.")) return;
             try {
                 await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers').doc(docId).delete();
                 document.getElementById('lookup-form').dispatchEvent(new Event('submit'));
@@ -359,8 +361,12 @@
             }
         }
 
-        // Start App
-        window.onload = init;
+        // Initialize immediately
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
     </script>
 </body>
 </html>
