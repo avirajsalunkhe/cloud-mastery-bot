@@ -8,48 +8,124 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- React & ReactDOM (CDN) -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Babel for JSX -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
     <style>
         .active-tab { background-color: #2563eb; color: white; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-        .hidden-tab { display: none; }
-        .exam-card-selected { border-color: #3b82f6; background-color: #0f172a; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1); }
+        .hidden-tab { display: none !important; }
+        .exam-card-selected { border-color: #3b82f6 !important; background-color: #0f172a !important; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1); }
         [data-lucide] { width: 20px; height: 20px; }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen">
-    <div id="root"></div>
+    <div class="max-w-6xl mx-auto p-4 md:p-8">
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row items-start md:items-center justify-between mb-12 gap-6 border-b border-slate-800 pb-6">
+            <div class="flex items-center gap-4">
+                <div class="bg-blue-600 p-3 rounded-2xl shadow-xl shadow-blue-500/20">
+                    <i data-lucide="terminal" class="text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-3xl font-black italic uppercase tracking-tighter">Cloud Mastery <span class="text-blue-500 not-italic">Bot</span></h1>
+                    <div class="flex items-center gap-2 mt-1">
+                        <div id="status-dot" class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                        <p id="status-text" class="text-slate-500 text-xs font-bold uppercase tracking-widest">Initializing...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800 shadow-inner">
+                <button id="nav-dashboard" onclick="switchTab('dashboard')" class="px-6 py-2 rounded-lg text-sm font-bold transition-all active-tab">Enroll</button>
+                <button id="nav-manage" onclick="switchTab('manage')" class="px-6 py-2 rounded-lg text-sm font-bold transition-all text-slate-400">Manage</button>
+            </div>
+        </header>
+
+        <!-- Enrollment Tab -->
+        <main id="tab-content-dashboard" class="space-y-8">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <div class="lg:col-span-8 space-y-8">
+                    <section>
+                        <h3 class="text-sm font-black text-slate-500 uppercase tracking-widest mb-4">Certification Tracks</h3>
+                        <div id="exam-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                            <!-- Injected by JS -->
+                        </div>
+                    </section>
+                    <section class="bg-slate-900/40 border border-slate-800 rounded-3xl p-8">
+                        <h2 id="subscribe-title" class="text-xl font-black italic mb-6">Activate 5 Daily AZ-900 Questions</h2>
+                        <form id="subscribe-form" class="flex flex-col sm:flex-row gap-4">
+                            <input 
+                                id="email-input"
+                                type="email" 
+                                required 
+                                placeholder="Enter your email address..." 
+                                class="flex-1 bg-slate-950 border border-slate-700 rounded-xl py-4 px-6 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50" 
+                            />
+                            <button 
+                                type="submit" 
+                                id="btn-subscribe"
+                                class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-black transition-all"
+                            >
+                                Enroll Path
+                            </button>
+                        </form>
+                        <div id="subscribe-msg" class="mt-6 p-4 rounded-xl hidden text-sm font-bold bg-slate-950 border border-slate-800"></div>
+                    </section>
+                </div>
+                <div class="lg:col-span-4 space-y-6">
+                    <div class="bg-blue-600 rounded-3xl p-8 shadow-2xl">
+                        <p class="text-blue-100 text-xs font-bold uppercase mb-2">Network</p>
+                        <h3 id="global-count" class="text-5xl font-black text-white">0</h3>
+                        <p class="text-blue-200 text-[10px] mt-2 font-bold uppercase tracking-widest opacity-80">Active Learners Today</p>
+                    </div>
+                    <a href="https://buymeacoffee.com/avirajsalunkhe" target="_blank" class="w-full block text-center bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl text-xs shadow-lg shadow-amber-500/10">Buy me a coffee</a>
+                </div>
+            </div>
+        </main>
+
+        <!-- Management Tab -->
+        <main id="tab-content-manage" class="hidden-tab max-w-2xl mx-auto space-y-8">
+            <form id="lookup-form" class="flex gap-4">
+                <input 
+                    id="lookup-email"
+                    type="email" 
+                    required 
+                    placeholder="Enter email to lookup..." 
+                    class="flex-1 bg-slate-900 border border-slate-800 rounded-xl py-4 px-6 outline-none"
+                />
+                <button type="submit" id="btn-search" class="bg-slate-800 px-8 rounded-xl font-bold transition-colors hover:bg-slate-700">Search</button>
+            </form>
+            <div id="user-subs-list" class="space-y-4">
+                <!-- Injected by JS -->
+            </div>
+        </main>
+
+        <footer class="mt-20 pt-10 border-t border-slate-900 text-center text-slate-600 text-[10px] font-black uppercase tracking-widest">
+            <p>© 2024 Cloud Mastery Bot • Built by Aviraj Salunkhe</p>
+        </footer>
+    </div>
 
     <!-- Firebase SDKs (Compat Version) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
-    <script type="text/babel">
-        const { useState, useEffect } = React;
-
+    <script>
         // --- 1. CONFIGURATION LOADING ---
-        // This exact string is replaced by your GitHub Action Workflow
+        // This exact placeholder string is replaced by your GitHub Action Workflow
         const GITHUB_CONFIG_PLACEHOLDER = 'GITHUB_FIREBASE_CONFIG_PLACEHOLDER';
-        let firebaseConfig = {};
+        let firebaseConfig = null;
 
         try {
-            // Priority: Environment Variable (Preview) -> Injected Secret (GitHub) -> Fallback
-            if (typeof __firebase_config !== 'undefined') {
+            // Check Priority: 
+            // 1. Environment Variable (Internal Canvas Preview)
+            // 2. Placeholder String (Injected by GitHub Action during deployment)
+            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
                 firebaseConfig = JSON.parse(__firebase_config);
-            } else if (GITHUB_CONFIG_PLACEHOLDER.startsWith('{')) {
+            } else if (GITHUB_CONFIG_PLACEHOLDER !== 'GITHUB_FIREBASE_CONFIG_PLACEHOLDER') {
                 firebaseConfig = JSON.parse(GITHUB_CONFIG_PLACEHOLDER);
             }
         } catch (e) {
-            console.error("Firebase config parsing failed.", e);
+            console.error("Critical: Firebase configuration could not be loaded.");
         }
 
         const APP_ID = 'cloud-devops-bot';
-
         const EXAM_PATHS = [
             { id: 'AZ-900', name: 'Azure Fundamentals', icon: 'globe', color: 'text-blue-400' },
             { id: 'AI-900', name: 'Azure AI Fundamentals', icon: 'cpu', color: 'text-purple-400' },
@@ -59,214 +135,213 @@
             { id: 'MS-900', name: 'Microsoft 365', icon: 'cloud', color: 'text-orange-400' },
         ];
 
-        const App = () => {
-            const [activeTab, setActiveTab] = useState('dashboard');
-            const [selectedExam, setSelectedExam] = useState('AZ-900');
-            const [emailInput, setEmailInput] = useState('');
-            const [lookupEmail, setLookupEmail] = useState('');
-            const [user, setUser] = useState(null);
-            const [db, setDb] = useState(null);
-            const [status, setStatus] = useState({ type: 'pending', text: 'Initializing...' });
-            const [globalCount, setGlobalCount] = useState(0);
-            const [userSubs, setUserSubs] = useState([]);
-            const [isActionLoading, setIsActionLoading] = useState(false);
+        // --- 2. APP STATE ---
+        let selectedExam = 'AZ-900';
+        let db, auth, currentUser;
 
-            useEffect(() => {
-                if (!firebaseConfig.apiKey) {
-                    setStatus({ type: 'error', text: 'Missing Configuration' });
-                    return;
-                }
+        // --- 3. UI FUNCTIONS ---
+        function setStatus(type, text) {
+            const dot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            if (!dot || !statusText) return;
+            
+            statusText.innerText = text;
+            
+            if (type === 'success') {
+                dot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
+                statusText.className = "text-emerald-500 text-xs font-bold uppercase tracking-widest";
+            } else if (type === 'error') {
+                dot.className = "w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]";
+                statusText.className = "text-red-500 text-xs font-bold uppercase tracking-widest";
+            } else {
+                dot.className = "w-2 h-2 rounded-full bg-blue-500 animate-pulse";
+                statusText.className = "text-slate-500 text-xs font-bold uppercase tracking-widest";
+            }
+        }
 
-                const firebaseApp = firebase.initializeApp(firebaseConfig);
-                const firestore = firebaseApp.firestore();
-                const auth = firebaseApp.auth();
-                setDb(firestore);
+        function switchTab(tabId) {
+            const dashboardTab = document.getElementById('tab-content-dashboard');
+            const manageTab = document.getElementById('tab-content-manage');
+            const navDashboard = document.getElementById('nav-dashboard');
+            const navManage = document.getElementById('nav-manage');
 
-                const initAuth = async () => {
-                    try {
-                        await auth.signInAnonymously();
-                        auth.onAuthStateChanged((u) => {
-                            setUser(u);
-                            if (u) {
-                                setStatus({ type: 'success', text: 'Live Connection' });
-                                setupGlobalListener(firestore);
-                            }
-                        });
-                    } catch (err) {
-                        setStatus({ type: 'error', text: 'Connection Refused' });
+            if (tabId === 'dashboard') {
+                dashboardTab.classList.remove('hidden-tab');
+                manageTab.classList.add('hidden-tab');
+                navDashboard.classList.add('active-tab');
+                navManage.classList.remove('active-tab');
+                navManage.classList.add('text-slate-400');
+            } else {
+                dashboardTab.classList.add('hidden-tab');
+                manageTab.classList.remove('hidden-tab');
+                navDashboard.classList.remove('active-tab');
+                navDashboard.classList.add('text-slate-400');
+                navManage.classList.add('active-tab');
+            }
+            lucide.createIcons();
+        }
+
+        function renderExamGrid() {
+            const grid = document.getElementById('exam-grid');
+            if (!grid) return;
+            
+            grid.innerHTML = EXAM_PATHS.map(exam => `
+                <button 
+                    onclick="selectExam('${exam.id}')"
+                    class="p-5 rounded-2xl border-2 transition-all text-left bg-slate-950 ${selectedExam === exam.id ? 'exam-card-selected border-blue-500' : 'border-slate-800/50'}"
+                >
+                    <i data-lucide="${exam.icon}" class="mb-3 ${exam.color}"></i>
+                    <p class="text-xs font-black ${selectedExam === exam.id ? 'text-white' : 'text-slate-300'}">${exam.id}</p>
+                </button>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function selectExam(examId) {
+            selectedExam = examId;
+            const title = document.getElementById('subscribe-title');
+            if (title) title.innerText = `Activate 5 Daily ${examId} Questions`;
+            renderExamGrid();
+        }
+
+        // --- 4. DATA FUNCTIONS ---
+        async function init() {
+            renderExamGrid();
+            
+            if (!firebaseConfig || !firebaseConfig.apiKey) {
+                setStatus('error', 'Configuration Missing');
+                return;
+            }
+
+            try {
+                const app = firebase.initializeApp(firebaseConfig);
+                db = firebase.firestore(app);
+                auth = firebase.auth(app);
+
+                setStatus('pending', 'Authenticating...');
+                
+                // Rule 3: Auth before Queries
+                await auth.signInAnonymously();
+                
+                auth.onAuthStateChanged(user => {
+                    currentUser = user;
+                    if (user) {
+                        setStatus('success', 'Connection Secure');
+                        startGlobalListener();
+                    } else {
+                        setStatus('error', 'Auth Failed');
                     }
-                };
-
-                initAuth();
-                if (window.lucide) lucide.createIcons();
-            }, []);
-
-            useEffect(() => {
-                if (window.lucide) lucide.createIcons();
-            }, [activeTab, selectedExam, userSubs]);
-
-            const setupGlobalListener = (firestore) => {
-                const path = firestore.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers');
-                path.onSnapshot((snap) => {
-                    setGlobalCount(snap.size);
-                }, (err) => {
-                    console.error("Firestore Permission Error:", err);
-                    setStatus({ type: 'error', text: 'Database Access Denied' });
                 });
-            };
+            } catch (err) {
+                console.error(err);
+                setStatus('error', 'Startup Failed');
+            }
+        }
 
-            const handleSubscribe = async (e) => {
-                e.preventDefault();
-                if (!user || !db) return;
-                setIsActionLoading(true);
+        function startGlobalListener() {
+            // Rule 1: Strict Paths
+            const path = db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers');
+            path.onSnapshot(snap => {
+                const countEl = document.getElementById('global-count');
+                if (countEl) countEl.innerText = snap.size;
+            }, err => {
+                console.error(err);
+                setStatus('error', 'Permission Denied');
+            });
+        }
 
-                try {
-                    const path = db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers');
-                    await path.add({
-                        email: emailInput.toLowerCase().trim(),
-                        examType: selectedExam,
-                        subscribedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                        status: 'active',
-                        streak: 0,
-                        userId: user.uid
-                    });
-                    alert(`Successfully enrolled in ${selectedExam}!`);
-                    setEmailInput('');
-                } catch (err) {
-                    alert("Error enrolling. Check Firebase Rules.");
-                } finally {
-                    setIsActionLoading(false);
-                }
-            };
+        // --- 5. EVENT LISTENERS ---
+        document.getElementById('subscribe-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!currentUser) return;
+            
+            const btn = document.getElementById('btn-subscribe');
+            const emailInput = document.getElementById('email-input');
+            const msgBox = document.getElementById('subscribe-msg');
+            
+            const email = emailInput.value.toLowerCase().trim();
+            btn.disabled = true;
+            btn.innerText = 'Enrolling...';
 
-            const handleLookup = async (e) => {
-                e.preventDefault();
-                if (!user || !db) return;
-                setIsActionLoading(true);
+            try {
+                await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers').add({
+                    email: email,
+                    examType: selectedExam,
+                    subscribedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    status: 'active',
+                    streak: 0,
+                    userId: currentUser.uid
+                });
+                
+                msgBox.classList.remove('hidden');
+                msgBox.innerText = `Success! Enrolled in ${selectedExam}.`;
+                emailInput.value = '';
+                setTimeout(() => msgBox.classList.add('hidden'), 5000);
+            } catch (err) {
+                alert("Enrollment failed. Ensure Anonymous Auth is enabled in Firebase.");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Enroll Path';
+            }
+        });
 
-                try {
-                    const path = db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers');
-                    const snap = await path.where('email', '==', lookupEmail.toLowerCase().trim()).get();
-                    const results = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    setUserSubs(results);
-                } catch (err) {
-                    alert("Search failed.");
-                } finally {
-                    setIsActionLoading(false);
-                }
-            };
+        document.getElementById('lookup-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!currentUser) return;
 
-            const handleUnsubscribe = async (id) => {
-                if (!confirm("Are you sure?")) return;
-                try {
-                    await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers').doc(id).delete();
-                    setUserSubs(prev => prev.filter(s => s.id !== id));
-                } catch (err) {
-                    alert("Delete failed.");
-                }
-            };
+            const btn = document.getElementById('btn-search');
+            const email = document.getElementById('lookup-email').value.toLowerCase().trim();
+            const list = document.getElementById('user-subs-list');
+            
+            btn.disabled = true;
+            btn.innerText = 'Searching...';
 
-            return (
-                <div className="max-w-6xl mx-auto p-4 md:p-8">
-                    <header className="flex flex-col md:flex-row items-start md:items-center justify-between mb-12 gap-6 border-b border-slate-800 pb-6">
-                        <div className="flex items-center gap-4">
-                            <div className="bg-blue-600 p-3 rounded-2xl shadow-xl shadow-blue-500/20">
-                                <i data-lucide="terminal" class="text-white"></i>
-                            </div>
-                            <div>
-                                <h1 className="text-3xl font-black italic uppercase tracking-tighter">Cloud Mastery <span className="text-blue-500 not-italic">Bot</span></h1>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <div className={`w-2 h-2 rounded-full ${status.type === 'success' ? 'bg-emerald-500' : 'bg-blue-500 animate-pulse'}`}></div>
-                                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">{status.text}</p>
+            try {
+                const snap = await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers')
+                    .where('email', '==', email).get();
+                
+                if (snap.empty) {
+                    list.innerHTML = `<p class="text-center text-slate-500 py-10 font-bold uppercase text-xs">No records found</p>`;
+                } else {
+                    list.innerHTML = snap.docs.map(doc => {
+                        const data = doc.data();
+                        return `
+                            <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex justify-between items-center animate-in fade-in slide-in-from-bottom-2">
+                                <div>
+                                    <h4 class="font-black text-blue-400 uppercase text-xs">${data.examType} Path</h4>
+                                    <p class="text-lg font-bold">Streak: ${data.streak || 0} Days</p>
                                 </div>
+                                <button 
+                                    onclick="unsubscribe('${doc.id}')"
+                                    class="text-slate-500 hover:text-red-400 transition-all font-bold text-xs uppercase"
+                                >
+                                    <i data-lucide="user-minus" class="inline-block mr-1"></i> Delete
+                                </button>
                             </div>
-                        </div>
-                        <div className="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800 shadow-inner">
-                            <button onClick={() => setActiveTab('dashboard')} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'dashboard' ? 'active-tab' : 'text-slate-400'}`}>Enroll</button>
-                            <button onClick={() => setActiveTab('manage')} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'manage' ? 'active-tab' : 'text-slate-400'}`}>Manage</button>
-                        </div>
-                    </header>
+                        `;
+                    }).join('');
+                    lucide.createIcons();
+                }
+            } catch (err) {
+                alert("Search failed.");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Search';
+            }
+        });
 
-                    {activeTab === 'dashboard' ? (
-                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                            <div className="lg:col-span-8 space-y-8">
-                                <section>
-                                    <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-4">Certification Tracks</h3>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                                        {EXAM_PATHS.map((exam) => (
-                                            <button 
-                                                key={exam.id} 
-                                                onClick={() => setSelectedExam(exam.id)}
-                                                className={`p-5 rounded-2xl border-2 transition-all text-left bg-slate-950 ${selectedExam === exam.id ? 'exam-card-selected border-blue-500' : 'border-slate-800/50'}`}
-                                            >
-                                                <i data-lucide={exam.icon} className={`mb-3 ${exam.color}`}></i>
-                                                <p className="text-xs font-black text-slate-300">{exam.id}</p>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </section>
-                                <section className="bg-slate-900/40 border border-slate-800 rounded-3xl p-8">
-                                    <h2 className="text-xl font-black italic mb-6">Activate 5 Daily {selectedExam} Questions</h2>
-                                    <form onSubmit={handleSubscribe} className="flex flex-col sm:flex-row gap-4">
-                                        <input 
-                                            type="email" 
-                                            required 
-                                            placeholder="Enter your email address..." 
-                                            value={emailInput}
-                                            onChange={(e) => setEmailInput(e.target.value)}
-                                            className="flex-1 bg-slate-950 border border-slate-700 rounded-xl py-4 px-6 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50" 
-                                        />
-                                        <button 
-                                            type="submit" 
-                                            disabled={isActionLoading}
-                                            className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-black transition-all"
-                                        >
-                                            {isActionLoading ? 'Processing...' : 'Enroll Path'}
-                                        </button>
-                                    </form>
-                                </section>
-                            </div>
-                            <div className="lg:col-span-4 space-y-6">
-                                <div className="bg-blue-600 rounded-3xl p-8 shadow-2xl">
-                                    <p className="text-blue-100 text-xs font-bold uppercase mb-2">Network</p>
-                                    <h3 className="text-5xl font-black text-white">{globalCount}</h3>
-                                    <p className="text-blue-200 text-[10px] mt-2 font-bold uppercase tracking-widest opacity-80">Active Learners Today</p>
-                                </div>
-                                <a href="https://buymeacoffee.com/avirajsalunkhe" target="_blank" className="w-full block text-center bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl text-xs shadow-lg shadow-amber-500/10">Buy me a coffee</a>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="max-w-2xl mx-auto space-y-8">
-                            <form onSubmit={handleLookup} className="flex gap-4">
-                                <input 
-                                    type="email" 
-                                    required 
-                                    placeholder="Enter email to lookup..." 
-                                    value={lookupEmail}
-                                    onChange={(e) => setLookupEmail(e.target.value)}
-                                    className="flex-1 bg-slate-900 border border-slate-800 rounded-xl py-4 px-6 outline-none"
-                                />
-                                <button type="submit" className="bg-slate-800 px-8 rounded-xl font-bold">Search</button>
-                            </form>
-                            <div className="space-y-4">
-                                {userSubs.map(sub => (
-                                    <div key={sub.id} className="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex justify-between items-center">
-                                        <div>
-                                            <h4 className="font-black text-blue-400 uppercase text-xs">{sub.examType} Path</h4>
-                                            <p className="text-lg font-bold">Streak: {sub.streak || 0} Days</p>
-                                        </div>
-                                        <button onClick={() => handleUnsubscribe(sub.id)} className="text-slate-500 hover:text-red-400 transition-all font-bold text-xs uppercase"><i data-lucide="user-minus" className="inline-block mr-1"></i> Delete</button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-        };
+        async function unsubscribe(docId) {
+            if (!confirm("Are you sure? This will stop your daily questions and reset your streak.")) return;
+            try {
+                await db.collection('artifacts').doc(APP_ID).collection('public').doc('data').collection('subscribers').doc(docId).delete();
+                document.getElementById('lookup-form').dispatchEvent(new Event('submit'));
+            } catch (err) {
+                alert("Deletion failed.");
+            }
+        }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        // Start App
+        window.onload = init;
     </script>
 </body>
 </html>
