@@ -32,16 +32,14 @@ db = firestore.client()
 
 def get_question_pack(exam):
     """
-    Fetches a pack of 5 questions from Gemini. 
+    Fetches exactly 1 short question from Gemini. 
     Implements a robust fallback and high-patience rate-limit cooling.
     """
     if not GEMINI_API_KEY:
         print("❌ GEMINI_API_KEY is missing.")
         return None
 
-    # Strategies re-ordered based on your successful logs.
-    # gemini-2.0-flash is the only one that didn't return 404.
-    # Added '-latest' aliases which are often more reliable.
+    # Strategies re-ordered based on successful logs.
     strategies = [
         ("v1beta", "gemini-2.0-flash", True),
         ("v1beta", "gemini-1.5-flash-latest", True),
@@ -50,11 +48,12 @@ def get_question_pack(exam):
         ("v1beta", "gemini-1.5-pro-latest", True),
     ]
     
+    # Prompt updated for 1 question and 40 char limit
     prompt = (
-        f"Generate exactly 5 multiple-choice questions for the {exam} certification. "
-        "Sequence: Q1-Easy, Q2-Medium, Q3-Intermediate, Q4-Hard, Q5-Expert. "
-        "Return a JSON array of objects. Each must have: 'question', 'options' (array of 4), "
-        "'correctIndex' (0-3), 'explanation', and 'topic'. "
+        f"Generate exactly 1 multiple-choice question for the {exam} certification. "
+        "The question text MUST be extremely short (maximum 40 characters). "
+        "Return a JSON array containing exactly one object. The object must have: "
+        "'question', 'options' (array of 4), 'correctIndex' (0-3), 'explanation', and 'topic'. "
         "IMPORTANT: Output ONLY the raw JSON array. No markdown code blocks, no preamble."
     )
     
@@ -155,12 +154,12 @@ def send_email(user_data, questions_json):
     exam = user_data.get('examType', 'Certification')
     manage_url = f"{DASHBOARD_URL.rstrip('/')}/?tab=manage&email={email}"
     
-    colors = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444"]
+    colors = ["#3b82f6"] # Only one color needed for one question
     q_html = ""
     for i, q in enumerate(q_list):
         q_html += f"""
-        <div style='margin-bottom:25px; border-left:4px solid {colors[i]}; padding-left:15px;'>
-            <div style="font-size:10px; color:{colors[i]}; font-weight:bold; text-transform:uppercase;">Level {i+1}</div>
+        <div style='margin-bottom:25px; border-left:4px solid {colors[0]}; padding-left:15px;'>
+            <div style="font-size:10px; color:{colors[0]}; font-weight:bold; text-transform:uppercase;">Daily Challenge</div>
             <b style="font-size:16px; color:#1e293b; display:block; margin-bottom:5px;">{q['question']}</b>
             <div style="margin-top:8px; color:#64748b; font-size:13px;">Topic: {q.get('topic', 'General')}</div>
         </div>"""
@@ -175,7 +174,7 @@ def send_email(user_data, questions_json):
                 </div>
             </div>
             <p style="color:#475569; font-size:15px; line-height:1.6; text-align:center; margin-bottom:30px;">
-                Here is your daily <b>{exam}</b> question pack. Challenge yourself to maintain your streak!
+                Here is your daily <b>{exam}</b> question. Challenge yourself!
             </p>
             {q_html}
             <div style="margin-top:40px; border-top:1px solid #f1f5f9; padding-top:25px; text-align:center;">
@@ -185,7 +184,7 @@ def send_email(user_data, questions_json):
     </div>"""
     
     msg = MIMEMultipart()
-    msg['Subject'] = f"🚀 Day {streak}: Your {exam} Master Pack"
+    msg['Subject'] = f"🚀 Day {streak}: Your {exam} Question"
     msg['From'] = f"Cloud Mastery Bot <{SENDER_EMAIL}>"
     msg['To'] = email
     msg.attach(MIMEText(body, 'html'))
