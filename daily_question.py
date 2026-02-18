@@ -43,12 +43,12 @@ def get_question_pack(exam):
         print("❌ GEMINI_API_KEY is missing.")
         return None
 
-    # Strategies prioritized by success probability
+    # Strategies prioritized by success probability and latest model aliases
     strategies = [
-        ("v1beta", "gemini-1.5-flash", True),
+        ("v1beta", "gemini-1.5-flash-latest", True),
+        ("v1beta", "gemini-2.0-flash", True),
+        ("v1", "gemini-1.5-flash-latest", False),
         ("v1beta", "gemini-1.5-flash", False),
-        ("v1", "gemini-1.5-flash", False),
-        ("v1beta", "gemini-pro", False),
     ]
     
     prompt = (
