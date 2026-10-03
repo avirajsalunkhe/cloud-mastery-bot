@@ -25,7 +25,7 @@ The following table summarizes the main files and their roles.
 | `daily_automation.yml` | GitHub Actions workflow for scheduling and deployment          |
 | `index.html`           | Single-page enrollment and subscription management dashboard   |
 | `requirements.txt`     | Python dependencies for the automation script                  |
-| `README.md`            | Project documentation                                          |
+| `README.md`            | Project documentation and instruction for contribution         |
 
 ---
 
